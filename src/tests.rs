@@ -127,4 +127,103 @@ fn test_data_tree_with_serialization() {
     // Delete data
     tree.delete(2).unwrap();
     assert!(tree.get(2).is_err());
+}
+
+#[test]
+fn test_dirty_pages() {
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+    
+    // New tree should have no dirty pages
+    assert!(tree.dirty_pages().is_empty());
+    
+    // Put should mark the page as dirty
+    tree.put(1, b"hello").unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1);
+    
+    // Flush should clear dirty pages
+    tree.flush().unwrap();
+    assert!(tree.dirty_pages().is_empty());
+    
+    // Multiple puts to same page should still only mark it once
+    tree.put(1, b"world").unwrap();
+    tree.put(1, b"again").unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1);
+    
+    // Different pages should be marked separately
+    tree.put(2, b"two").unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1); // Still only one page is dirty
+    
+    // Flush should clear all dirty pages
+    tree.flush().unwrap();
+    assert!(tree.dirty_pages().is_empty());
+    
+    // Delete should mark page as dirty
+    tree.delete(1).unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1);
+    
+    // Get should not affect dirty state
+    let _ = tree.get(2);
+    assert_eq!(tree.dirty_pages().len(), 1);
+}
+
+#[test]
+fn test_dirty_pages_with_multiple_operations() {
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+    
+    // Multiple operations on same page
+    tree.put(1, b"one").unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1);
+    
+    tree.put(1, b"updated").unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1); // Same page, still only one dirty page
+    
+    // Flush should clear all dirty pages
+    tree.flush().unwrap();
+    assert!(tree.dirty_pages().is_empty());
+    
+    // More operations should mark page as dirty again
+    tree.delete(1).unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1);
+    
+    tree.put(1, b"three").unwrap();
+    assert_eq!(tree.dirty_pages().len(), 1); // Still same page
+}
+
+#[test]
+fn test_different_key_orders() {
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+
+    // Test 1: Insert keys 1, 2, 3
+    tree.put(1, b"value1").unwrap();
+    tree.put(2, b"value2").unwrap();
+    tree.put(3, b"value3").unwrap();
+
+    assert_eq!(tree.get(1).unwrap(), b"value1");
+    assert_eq!(tree.get(2).unwrap(), b"value2");
+    assert_eq!(tree.get(3).unwrap(), b"value3");
+
+    // Test 2: Insert keys 1, 3, 2
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+    tree.put(1, b"value1").unwrap();
+    tree.put(3, b"value3").unwrap();
+    tree.put(2, b"value2").unwrap();
+
+    assert_eq!(tree.get(1).unwrap(), b"value1");
+    assert_eq!(tree.get(2).unwrap(), b"value2");
+    assert_eq!(tree.get(3).unwrap(), b"value3");
+
+    // Test 3: Insert keys 3, 1, 2
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+    tree.put(3, b"value3").unwrap();
+    tree.put(1, b"value1").unwrap();
+    tree.put(2, b"value2").unwrap();
+
+    assert_eq!(tree.get(1).unwrap(), b"value1");
+    assert_eq!(tree.get(2).unwrap(), b"value2");
+    assert_eq!(tree.get(3).unwrap(), b"value3");
 } 

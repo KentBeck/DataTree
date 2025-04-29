@@ -26,7 +26,6 @@ pub struct LeafPage {
     metadata: Vec<KeyValueMeta>,
     data_start: usize, // Start of data section after metadata
     used_bytes: usize, // Used bytes in data section
-    dirty: bool,      // Track if page has been modified
     page_size: usize, // Size of the page in bytes
 }
 
@@ -37,7 +36,6 @@ impl LeafPage {
             metadata: Vec::new(),
             data_start: 0,
             used_bytes: 0,
-            dirty: false,
             page_size,
         }
     }
@@ -140,16 +138,6 @@ impl LeafPage {
         page
     }
 
-    /// Returns true if the page has been modified since last clear
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    /// Clears the dirty flag
-    pub fn clear_dirty(&mut self) {
-        self.dirty = false;
-    }
-
     pub fn get(&self, key: u64) -> Result<&[u8], KeyNotFoundError> {
         // Find the metadata for the key
         let meta = self.metadata.iter()
@@ -209,7 +197,6 @@ impl LeafPage {
                 self.data[old_meta.offset..old_meta.offset + value.len()]
                     .copy_from_slice(value);
                 self.metadata[index].length = value.len();
-                self.dirty = true;
                 return Ok(());
             }
 
@@ -228,8 +215,23 @@ impl LeafPage {
             }
         }
 
-        // Update data_start
-        self.data_start = self.metadata_size(false);
+        // Calculate new metadata size
+        let new_metadata_size = self.metadata_size(false);
+        
+        // If we need to move data to make room for new metadata
+        if new_metadata_size > self.data_start {
+            // Move all data to the new position
+            let data_to_move = self.used_bytes;
+            let new_data_start = new_metadata_size;
+            self.data.copy_within(self.data_start..self.data_start + data_to_move, new_data_start);
+            
+            // Update metadata offsets
+            for meta in &mut self.metadata {
+                meta.offset = new_data_start + (meta.offset - self.data_start);
+            }
+            
+            self.data_start = new_data_start;
+        }
 
         // Store the metadata
         let meta = KeyValueMeta {
@@ -243,7 +245,6 @@ impl LeafPage {
         let start = self.data_start + self.used_bytes;
         self.data[start..start + value.len()].copy_from_slice(value);
         self.used_bytes += value.len();
-        self.dirty = true;
 
         Ok(())
     }
@@ -283,7 +284,6 @@ impl LeafPage {
         if let Some(index) = self.metadata.iter().position(|m| m.key == key) {
             self.metadata.remove(index);
             self.compact_data();
-            self.dirty = true;
             Ok(())
         } else {
             Err(KeyNotFoundError)
