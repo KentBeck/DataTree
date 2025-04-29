@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::collections::HashMap;
 
 // Define a custom error type for when a key is not found
 #[derive(Debug)]
@@ -179,6 +180,103 @@ impl LeafPage {
             new_offset += meta.length;
         }
         self.used_bytes = new_offset - self.data_start;
+    }
+
+    // Method to remove a key-value pair
+    pub fn delete(&mut self, key: u64) -> Result<(), KeyNotFoundError> {
+        if let Some(index) = self.metadata.iter().position(|m| m.key == key) {
+            self.metadata.remove(index);
+            self.compact_data();
+            self.dirty = true;
+            Ok(())
+        } else {
+            Err(KeyNotFoundError)
+        }
+    }
+}
+
+// Trait for storing and retrieving pages
+pub trait PageStore {
+    fn get_page(&self, page_id: u64) -> Option<&LeafPage>;
+    fn get_page_mut(&mut self, page_id: u64) -> Option<&mut LeafPage>;
+    fn allocate_page(&mut self) -> u64;
+    fn flush(&mut self) -> Result<(), Box<dyn Error>>;
+}
+
+// In-memory implementation of PageStore for testing
+pub struct InMemoryPageStore {
+    pages: HashMap<u64, LeafPage>,
+    next_page_id: u64,
+}
+
+impl InMemoryPageStore {
+    pub fn new() -> Self {
+        InMemoryPageStore {
+            pages: HashMap::new(),
+            next_page_id: 0,
+        }
+    }
+}
+
+impl PageStore for InMemoryPageStore {
+    fn get_page(&self, page_id: u64) -> Option<&LeafPage> {
+        self.pages.get(&page_id)
+    }
+
+    fn get_page_mut(&mut self, page_id: u64) -> Option<&mut LeafPage> {
+        self.pages.get_mut(&page_id)
+    }
+
+    fn allocate_page(&mut self) -> u64 {
+        let page_id = self.next_page_id;
+        self.next_page_id += 1;
+        self.pages.insert(page_id, LeafPage::new());
+        page_id
+    }
+
+    fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+        // In memory store doesn't need to do anything on flush
+        Ok(())
+    }
+}
+
+pub struct DataTree<S: PageStore> {
+    store: S,
+    root_page_id: u64,
+}
+
+impl<S: PageStore> DataTree<S> {
+    pub fn new(mut store: S) -> Self {
+        let root_page_id = store.allocate_page();
+        DataTree {
+            store,
+            root_page_id,
+        }
+    }
+
+    pub fn get(&self, key: u64) -> Result<Vec<u8>, KeyNotFoundError> {
+        let page = self.store.get_page(self.root_page_id)
+            .ok_or(KeyNotFoundError)?;
+        let data = page.get(key)?;
+        Ok(data.to_vec())
+    }
+
+    pub fn put(&mut self, key: u64, value: &[u8]) -> Result<(), Box<dyn Error>> {
+        let page = self.store.get_page_mut(self.root_page_id)
+            .ok_or("Root page not found")?;
+        page.insert(key, value)?;
+        Ok(())
+    }
+
+    pub fn delete(&mut self, key: u64) -> Result<(), Box<dyn Error>> {
+        let page = self.store.get_page_mut(self.root_page_id)
+            .ok_or("Root page not found")?;
+        page.delete(key)?;
+        Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+        self.store.flush()
     }
 }
 
@@ -360,5 +458,23 @@ mod tests {
         page.insert(1, &[1, 2, 3, 4]).unwrap();
         page.insert(1, &[1, 2]).unwrap();
         assert_eq!(page.get(1).unwrap(), &[1, 2]);
+    }
+
+    #[test]
+    fn test_data_tree_basic_operations() {
+        let store = InMemoryPageStore::new();
+        let mut tree = DataTree::new(store);
+        
+        // Test put and get
+        tree.put(1, &[1, 2, 3]).unwrap();
+        assert_eq!(tree.get(1).unwrap(), vec![1, 2, 3]);
+        
+        // Test update
+        tree.put(1, &[4, 5, 6]).unwrap();
+        assert_eq!(tree.get(1).unwrap(), vec![4, 5, 6]);
+        
+        // Test delete
+        tree.delete(1).unwrap();
+        assert!(tree.get(1).is_err());
     }
 }
