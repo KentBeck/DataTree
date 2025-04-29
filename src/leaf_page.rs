@@ -21,121 +21,118 @@ struct KeyValueMeta {
     length: usize,
 }
 
+#[derive(Debug)]
 pub struct LeafPage {
-    data: Vec<u8>,
+    page_size: usize,
     metadata: Vec<KeyValueMeta>,
-    data_start: usize, // Start of data section after metadata
-    used_bytes: usize, // Used bytes in data section
-    page_size: usize, // Size of the page in bytes
+    data: Vec<u8>,
+    prev_page_id: u64,
+    next_page_id: u64,
 }
 
 impl LeafPage {
     pub fn new(page_size: usize) -> Self {
         LeafPage {
-            data: vec![0; page_size],
-            metadata: Vec::new(),
-            data_start: 0,
-            used_bytes: 0,
             page_size,
+            metadata: Vec::new(),
+            data: Vec::new(),
+            prev_page_id: 0,
+            next_page_id: 0,
         }
     }
 
-    // Serialize the page into raw bytes
     pub fn serialize(&self) -> Vec<u8> {
-        let mut bytes = vec![0; self.page_size];
+        let mut bytes = Vec::with_capacity(self.page_size);
         
-        // First 8 bytes: number of metadata entries (u64)
-        let meta_count = self.metadata.len() as u64;
-        bytes[0..8].copy_from_slice(&meta_count.to_le_bytes());
+        // Write metadata count (8 bytes)
+        bytes.extend_from_slice(&(self.metadata.len() as u64).to_le_bytes());
         
-        // Calculate header size (metadata entries start after this)
-        let header_size = 24 + (meta_count as usize * 24); // 24 = 8 (count) + 8 (data_start) + 8 (used_bytes)
+        // Write data start offset (8 bytes)
+        bytes.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
         
-        // Next 8 bytes: data_start (u64)
-        bytes[8..16].copy_from_slice(&(header_size as u64).to_le_bytes());
+        // Write used bytes (8 bytes)
+        bytes.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
         
-        // Next 8 bytes: used_bytes (u64)
-        bytes[16..24].copy_from_slice(&(self.used_bytes as u64).to_le_bytes());
+        // Write prev_page_id (8 bytes)
+        bytes.extend_from_slice(&self.prev_page_id.to_le_bytes());
         
-        println!("Serializing: meta_count={}, header_size={}, used_bytes={}", 
-                meta_count, header_size, self.used_bytes);
+        // Write next_page_id (8 bytes)
+        bytes.extend_from_slice(&self.next_page_id.to_le_bytes());
         
         // Write metadata entries
-        let mut offset = 24;
-        let mut data_offset = header_size;
-        
-        // First copy all the data
         for meta in &self.metadata {
-            let data = &self.data[meta.offset..meta.offset + meta.length];
-            bytes[data_offset..data_offset + meta.length].copy_from_slice(data);
-            
-            // Write metadata entry
-            println!("Serializing metadata: key={}, new_offset={}, length={}", 
-                    meta.key, data_offset, meta.length);
-            
-            // key (8 bytes)
-            bytes[offset..offset+8].copy_from_slice(&meta.key.to_le_bytes());
-            offset += 8;
-            // offset (8 bytes)
-            bytes[offset..offset+8].copy_from_slice(&(data_offset as u64).to_le_bytes());
-            offset += 8;
-            // length (8 bytes)
-            bytes[offset..offset+8].copy_from_slice(&(meta.length as u64).to_le_bytes());
-            offset += 8;
-            
-            data_offset += meta.length;
+            bytes.extend_from_slice(&meta.key.to_le_bytes());
+            bytes.extend_from_slice(&meta.offset.to_le_bytes());
+            bytes.extend_from_slice(&meta.length.to_le_bytes());
         }
+        
+        // Write data
+        bytes.extend_from_slice(&self.data);
         
         bytes
     }
 
-    // Deserialize raw bytes into a page
     pub fn deserialize(bytes: &[u8]) -> Self {
-        let page_size = bytes.len();
-        let mut page = LeafPage::new(page_size);
+        let mut offset = 0;
         
-        // Read number of metadata entries
-        let meta_count = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
+        // Read metadata count (8 bytes)
+        let count = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
         
-        // Read data_start
-        page.data_start = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+        // Read data start offset (8 bytes)
+        let data_start = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
         
-        // Read used_bytes
-        page.used_bytes = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
+        // Read used bytes (8 bytes)
+        let used_bytes = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
         
-        println!("Deserializing: meta_count={}, data_start={}, used_bytes={}", 
-                meta_count, page.data_start, page.used_bytes);
+        // Read prev_page_id (8 bytes)
+        let prev_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
+        
+        // Read next_page_id (8 bytes)
+        let next_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
         
         // Read metadata entries
-        let mut offset = 24;
-        for i in 0..meta_count {
-            let key_bytes: [u8; 8] = bytes[offset..offset+8].try_into().unwrap();
-            let key = u64::from_le_bytes(key_bytes);
+        let mut metadata = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let key = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
             offset += 8;
-            
-            let offset_bytes: [u8; 8] = bytes[offset..offset+8].try_into().unwrap();
-            let meta_offset = u64::from_le_bytes(offset_bytes) as usize;
+            let meta_offset = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
             offset += 8;
-            
-            let length_bytes: [u8; 8] = bytes[offset..offset+8].try_into().unwrap();
-            let length = u64::from_le_bytes(length_bytes) as usize;
+            let length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
             offset += 8;
-            
-            println!("Deserializing metadata {}: key={}, offset={}, length={}", 
-                    i, key, meta_offset, length);
-            
-            // Copy the data to its final location in the page
-            page.data[meta_offset..meta_offset + length]
-                .copy_from_slice(&bytes[meta_offset..meta_offset + length]);
-            
-            page.metadata.push(KeyValueMeta {
-                key,
-                offset: meta_offset,
-                length,
-            });
+            metadata.push(KeyValueMeta { key, offset: meta_offset, length });
         }
         
-        page
+        // Read data
+        let data = bytes[offset..offset + used_bytes as usize].to_vec();
+        
+        LeafPage {
+            page_size: bytes.len(),
+            metadata,
+            data,
+            prev_page_id,
+            next_page_id,
+        }
+    }
+
+    pub fn prev_page_id(&self) -> u64 {
+        self.prev_page_id
+    }
+
+    pub fn next_page_id(&self) -> u64 {
+        self.next_page_id
+    }
+
+    pub fn set_prev_page_id(&mut self, page_id: u64) {
+        self.prev_page_id = page_id;
+    }
+
+    pub fn set_next_page_id(&mut self, page_id: u64) {
+        self.next_page_id = page_id;
     }
 
     pub fn get(&self, key: u64) -> Result<&[u8], KeyNotFoundError> {
@@ -165,15 +162,15 @@ impl LeafPage {
             // For updates, we only count the additional space needed
             if let Some(existing_meta) = self.metadata.iter().find(|m| m.key == key) {
                 if data_size <= existing_meta.length {
-                    self.used_bytes // No additional space needed
+                    self.data.len() // No additional space needed
                 } else {
-                    self.used_bytes + (data_size - existing_meta.length)
+                    self.data.len() + (data_size - existing_meta.length)
                 }
             } else {
-                self.used_bytes + data_size
+                self.data.len() + data_size
             }
         } else {
-            self.used_bytes + data_size
+            self.data.len() + data_size
         };
 
         metadata_size + data_size
@@ -219,32 +216,24 @@ impl LeafPage {
         let new_metadata_size = self.metadata_size(false);
         
         // If we need to move data to make room for new metadata
-        if new_metadata_size > self.data_start {
+        if new_metadata_size > self.data.len() {
             // Move all data to the new position
-            let data_to_move = self.used_bytes;
+            let data_to_move = self.data.len();
             let new_data_start = new_metadata_size;
-            self.data.copy_within(self.data_start..self.data_start + data_to_move, new_data_start);
-            
-            // Update metadata offsets
-            for meta in &mut self.metadata {
-                meta.offset = new_data_start + (meta.offset - self.data_start);
-            }
-            
-            self.data_start = new_data_start;
+            self.data.copy_within(0..data_to_move, new_data_start);
         }
 
         // Store the metadata
         let meta = KeyValueMeta {
             key,
-            offset: self.data_start + self.used_bytes,
+            offset: self.data.len(),
             length: value.len(),
         };
         self.metadata.push(meta);
 
         // Copy the data into the page
-        let start = self.data_start + self.used_bytes;
-        self.data[start..start + value.len()].copy_from_slice(value);
-        self.used_bytes += value.len();
+        let start = self.data.len();
+        self.data.extend_from_slice(value);
 
         Ok(())
     }
@@ -252,8 +241,7 @@ impl LeafPage {
     // Helper method to compact data after removing entries
     fn compact_data(&mut self) {
         if self.metadata.is_empty() {
-            self.used_bytes = 0;
-            self.data_start = 0;
+            self.data.clear();
             return;
         }
 
@@ -261,10 +249,10 @@ impl LeafPage {
         self.metadata.sort_by_key(|m| m.offset);
 
         // Update data_start
-        self.data_start = self.metadata_size(true);
+        let data_start = self.metadata_size(true);
 
         // Compact data
-        let mut new_offset = self.data_start;
+        let mut new_offset = data_start;
         for meta in self.metadata.iter_mut() {
             if meta.offset != new_offset {
                 // Move data to new position
@@ -276,7 +264,7 @@ impl LeafPage {
             }
             new_offset += meta.length;
         }
-        self.used_bytes = new_offset - self.data_start;
+        self.data.truncate(new_offset - data_start);
     }
 
     // Method to remove a key-value pair
@@ -288,5 +276,58 @@ impl LeafPage {
         } else {
             Err(KeyNotFoundError)
         }
+    }
+
+    pub fn is_full(&self, key: &[u8], value: &[u8]) -> bool {
+        // Calculate space needed for new entry
+        let new_metadata_size = std::mem::size_of::<KeyValueMeta>();
+        let new_data_size = key.len() + value.len();
+        
+        // Calculate current space used
+        let current_metadata_size = self.metadata.len() * std::mem::size_of::<KeyValueMeta>();
+        let current_data_size = self.data.len();
+        
+        // Add header size (metadata count, data start, used bytes)
+        let header_size = 3 * std::mem::size_of::<u64>();
+        
+        // Check if we have enough space
+        current_metadata_size + current_data_size + new_metadata_size + new_data_size + header_size > self.page_size
+    }
+
+    pub fn split(&mut self) -> (LeafPage, Vec<u8>) {
+        // Create new page with same size
+        let mut new_page = LeafPage::new(self.page_size);
+        
+        // Sort metadata by key for consistent splitting
+        self.metadata.sort_by_key(|m| m.key);
+        
+        // Split metadata in half
+        let split_point = self.metadata.len() / 2;
+        let new_metadata = self.metadata.split_off(split_point);
+        
+        // Calculate new data start for both pages
+        let mut current_data_start = 0;
+        let mut new_data_start = 0;
+        
+        // Update metadata and data for both pages
+        for meta in &mut self.metadata {
+            let data = &self.data[meta.offset..meta.offset + meta.length];
+            meta.offset = current_data_start;
+            current_data_start += meta.length;
+        }
+        
+        for meta in &new_metadata {
+            let data = &self.data[meta.offset..meta.offset + meta.length];
+            meta.offset = new_data_start;
+            new_data_start += meta.length;
+        }
+        
+        // Set metadata and data for new page
+        new_page.metadata = new_metadata;
+        new_page.data = self.data.clone();
+        
+        // Return the new page and the key that split the pages
+        let split_key = self.metadata.last().unwrap().key;
+        (new_page, split_key.to_vec())
     }
 } 

@@ -15,6 +15,11 @@ pub trait PageStore {
     fn allocate_page(&mut self) -> u64;
     fn flush(&mut self) -> Result<(), Box<dyn Error>>;
     fn page_size(&self) -> usize;
+    fn get_next_page_id(&self, page_id: u64) -> Option<u64>;
+    fn get_prev_page_id(&self, page_id: u64) -> Option<u64>;
+    fn link_pages(&mut self, prev_page_id: u64, next_page_id: u64) -> Result<(), Box<dyn Error>>;
+    fn page_exists(&self, page_id: u64) -> bool;
+    fn free_page(&mut self, page_id: u64) -> Result<(), Box<dyn Error>>;
 }
 
 // In-memory implementation of PageStore for testing
@@ -49,6 +54,16 @@ impl InMemoryPageStore {
 
     fn verify_crc(&self, data: &[u8], expected_crc: u32) -> bool {
         self.calculate_crc(data) == expected_crc
+    }
+
+    pub fn page_exists(&self, page_id: u64) -> bool {
+        self.pages.contains_key(&page_id)
+    }
+
+    pub fn free_page(&mut self, page_id: u64) -> Result<(), Box<dyn Error>> {
+        // Remove the page from the store
+        self.pages.remove(&page_id);
+        Ok(())
     }
 }
 
@@ -108,5 +123,37 @@ impl PageStore for InMemoryPageStore {
 
     fn page_size(&self) -> usize {
         self.page_size
+    }
+
+    fn get_next_page_id(&self, page_id: u64) -> Option<u64> {
+        self.get_page_bytes(page_id).map(|bytes| {
+            let page = LeafPage::deserialize(&bytes);
+            page.next_page_id()
+        })
+    }
+
+    fn get_prev_page_id(&self, page_id: u64) -> Option<u64> {
+        self.get_page_bytes(page_id).map(|bytes| {
+            let page = LeafPage::deserialize(&bytes);
+            page.prev_page_id()
+        })
+    }
+
+    fn link_pages(&mut self, prev_page_id: u64, next_page_id: u64) -> Result<(), Box<dyn Error>> {
+        // Update prev page's next pointer
+        if let Some(prev_bytes) = self.get_page_bytes(prev_page_id) {
+            let mut prev_page = LeafPage::deserialize(&prev_bytes);
+            prev_page.set_next_page_id(next_page_id);
+            self.put_page_bytes(prev_page_id, &prev_page.serialize());
+        }
+
+        // Update next page's prev pointer
+        if let Some(next_bytes) = self.get_page_bytes(next_page_id) {
+            let mut next_page = LeafPage::deserialize(&next_bytes);
+            next_page.set_prev_page_id(prev_page_id);
+            self.put_page_bytes(next_page_id, &next_page.serialize());
+        }
+
+        Ok(())
     }
 } 
