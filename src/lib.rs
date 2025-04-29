@@ -1,7 +1,3 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
 use std::error::Error;
 use std::fmt;
 
@@ -33,6 +29,7 @@ pub struct LeafPage {
     metadata: Vec<KeyValueMeta>,
     data_start: usize, // Start of data section after metadata
     used_bytes: usize, // Used bytes in data section
+    dirty: bool,      // Track if page has been modified
 }
 
 impl LeafPage {
@@ -42,7 +39,18 @@ impl LeafPage {
             metadata: Vec::new(),
             data_start: 0,
             used_bytes: 0,
+            dirty: false,
         }
+    }
+
+    /// Returns true if the page has been modified since last clear
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Clears the dirty flag
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
     }
 
     pub fn get(&self, key: u64) -> Result<&[u8], KeyNotFoundError> {
@@ -104,6 +112,7 @@ impl LeafPage {
                 self.data[old_meta.offset..old_meta.offset + value.len()]
                     .copy_from_slice(value);
                 self.metadata[index].length = value.len();
+                self.dirty = true;
                 return Ok(());
             }
 
@@ -137,6 +146,7 @@ impl LeafPage {
         let start = self.data_start + self.used_bytes;
         self.data[start..start + value.len()].copy_from_slice(value);
         self.used_bytes += value.len();
+        self.dirty = true;
 
         Ok(())
     }
@@ -177,9 +187,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_dirty_flag_on_insert() {
+        let mut page = LeafPage::new();
+        assert!(!page.is_dirty(), "New page should not be dirty");
+        
+        page.insert(1, &[1, 2, 3]).unwrap();
+        assert!(page.is_dirty(), "Page should be dirty after insert");
+        
+        page.clear_dirty();
+        assert!(!page.is_dirty(), "Page should not be dirty after clear");
+    }
+
+    #[test]
+    fn test_dirty_flag_on_update() {
+        let mut page = LeafPage::new();
+        page.insert(1, &[1, 2, 3]).unwrap();
+        page.clear_dirty();
+        assert!(!page.is_dirty(), "Page should not be dirty after clear");
+
+        // Update with same key
+        page.insert(1, &[4, 5, 6]).unwrap();
+        assert!(page.is_dirty(), "Page should be dirty after update");
+    }
+
+    #[test]
+    fn test_dirty_flag_on_read() {
+        let mut page = LeafPage::new();
+        page.insert(1, &[1, 2, 3]).unwrap();
+        page.clear_dirty();
+        
+        // Reading should not affect dirty flag
+        let _ = page.get(1).unwrap();
+        assert!(!page.is_dirty(), "Page should not be dirty after read");
     }
 
     #[test]
