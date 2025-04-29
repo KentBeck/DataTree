@@ -1,13 +1,17 @@
 use std::error::Error;
 use std::collections::HashMap;
 use crate::leaf_page::LeafPage;
+use crc::{Crc, CRC_32_ISCSI};
 
 pub const DEFAULT_PAGE_SIZE: usize = 4096; // 4KB default page size
+
+// CRC-32/ISCSI is a good choice for data integrity checks
+const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
 // Trait for storing and retrieving pages
 pub trait PageStore {
     fn get_page_bytes(&self, page_id: u64) -> Option<Vec<u8>>;
-    fn put_page_bytes(&mut self, page_id: u64, data: &[u8]);
+    fn put_page_bytes(&mut self, page_id: u64, bytes: &[u8]) -> Option<()>;
     fn allocate_page(&mut self) -> u64;
     fn flush(&mut self) -> Result<(), Box<dyn Error>>;
     fn page_size(&self) -> usize;
@@ -33,23 +37,68 @@ impl InMemoryPageStore {
             page_size,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn pages(&mut self) -> &mut HashMap<u64, Vec<u8>> {
+        &mut self.pages
+    }
+
+    fn calculate_crc(&self, data: &[u8]) -> u32 {
+        CRC.checksum(data)
+    }
+
+    fn verify_crc(&self, data: &[u8], expected_crc: u32) -> bool {
+        self.calculate_crc(data) == expected_crc
+    }
 }
 
 impl PageStore for InMemoryPageStore {
     fn get_page_bytes(&self, page_id: u64) -> Option<Vec<u8>> {
-        self.pages.get(&page_id).cloned()
+        self.pages.get(&page_id).map(|page| {
+            // Split the page into data and CRC
+            let (data, crc_bytes) = page.split_at(page.len() - 4);
+            let expected_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap());
+            
+            // Verify CRC
+            if !self.verify_crc(data, expected_crc) {
+                panic!("CRC check failed for page {}", page_id);
+            }
+            
+            data.to_vec()
+        })
     }
 
-    fn put_page_bytes(&mut self, page_id: u64, data: &[u8]) {
-        assert_eq!(data.len(), self.page_size, "Data size must match page size");
-        self.pages.insert(page_id, data.to_vec());
+    fn put_page_bytes(&mut self, page_id: u64, bytes: &[u8]) -> Option<()> {
+        // Ensure data fits in page size minus CRC size
+        if bytes.len() > self.page_size - 4 {
+            return None;
+        }
+
+        // Calculate and append CRC
+        let crc = self.calculate_crc(bytes);
+        let mut page = bytes.to_vec();
+        page.extend_from_slice(&crc.to_le_bytes());
+
+        // Ensure the final page size is correct
+        if page.len() > self.page_size {
+            return None;
+        }
+
+        self.pages.insert(page_id, page);
+        Some(())
     }
 
     fn allocate_page(&mut self) -> u64 {
         let page_id = self.next_page_id;
         self.next_page_id += 1;
-        let empty_page = LeafPage::new(self.page_size).serialize();
-        self.pages.insert(page_id, empty_page);
+        
+        // Create an empty page with proper CRC
+        let empty_page = LeafPage::new(self.page_size - 4).serialize();
+        let crc = self.calculate_crc(&empty_page);
+        let mut page = empty_page;
+        page.extend_from_slice(&crc.to_le_bytes());
+        
+        self.pages.insert(page_id, page);
         page_id
     }
 

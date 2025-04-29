@@ -33,7 +33,8 @@ impl<S: PageStore> DataTree<S> {
             .ok_or("Root page not found")?;
         let mut page = LeafPage::deserialize(&page_bytes);
         page.insert(key, value)?;
-        self.store.put_page_bytes(self.root_page_id, &page.serialize());
+        self.store.put_page_bytes(self.root_page_id, &page.serialize())
+            .ok_or("Failed to store page")?;
         self.dirty_pages.insert(self.root_page_id);
         Ok(())
     }
@@ -43,7 +44,8 @@ impl<S: PageStore> DataTree<S> {
             .ok_or("Root page not found")?;
         let mut page = LeafPage::deserialize(&page_bytes);
         page.delete(key)?;
-        self.store.put_page_bytes(self.root_page_id, &page.serialize());
+        self.store.put_page_bytes(self.root_page_id, &page.serialize())
+            .ok_or("Failed to store page")?;
         self.dirty_pages.insert(self.root_page_id);
         Ok(())
     }
@@ -59,5 +61,15 @@ impl<S: PageStore> DataTree<S> {
     /// Returns a reference to the set of dirty page IDs
     pub fn dirty_pages(&self) -> &HashSet<u64> {
         &self.dirty_pages
+    }
+
+    #[cfg(test)]
+    pub(crate) fn store(&mut self) -> &mut S {
+        &mut self.store
+    }
+
+    #[cfg(test)]
+    pub(crate) fn root_page_id(&self) -> u64 {
+        self.root_page_id
     }
 } 

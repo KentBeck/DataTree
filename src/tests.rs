@@ -45,7 +45,8 @@ fn test_exact_page_size() {
     let mut tree = DataTree::new(store);
     let meta_size = 24; // 8 bytes for key + 8 bytes for offset + 8 bytes for length
     let header_size = 24; // 8 bytes for count + 8 bytes for data_start + 8 bytes for used_bytes
-    let data = vec![0; page_size - header_size - meta_size];
+    let crc_size = 4; // 4 bytes for CRC
+    let data = vec![0; page_size - header_size - meta_size - crc_size];
     tree.put(1, &data).unwrap();
     assert_eq!(tree.get(1).unwrap(), data);
 }
@@ -226,4 +227,84 @@ fn test_different_key_orders() {
     assert_eq!(tree.get(1).unwrap(), b"value1");
     assert_eq!(tree.get(2).unwrap(), b"value2");
     assert_eq!(tree.get(3).unwrap(), b"value3");
+}
+
+#[test]
+fn test_crc_integrity() {
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+
+    // Store some data
+    tree.put(1, b"test data").unwrap();
+    
+    // Verify we can read it back
+    assert_eq!(tree.get(1).unwrap(), b"test data");
+    
+    // Get root page ID before mutating tree
+    let root_id = tree.root_page_id();
+    
+    // Simulate data corruption by directly modifying the store
+    if let Some(store) = tree.store().pages().get_mut(&root_id) {
+        // Corrupt the data part (not the CRC)
+        store[0] = !store[0];
+    }
+    
+    // Attempting to read should panic due to CRC check failure
+    let result = std::panic::catch_unwind(|| {
+        let _ = tree.get(1);
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_page_size_with_crc() {
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+    let page_size = tree.store().page_size();
+
+    // Calculate available space for data
+    let header_size = 24; // 8 bytes for count + 8 bytes for data_start + 8 bytes for used_bytes
+    let meta_entry_size = 24; // 8 bytes for key + 8 bytes for offset + 8 bytes for length
+    let crc_size = 4;
+
+    // Test with a single large entry
+    let max_single_entry = page_size - header_size - meta_entry_size - crc_size;
+    let max_data = vec![0u8; max_single_entry];
+    assert!(tree.put(1, &max_data).is_ok());
+    assert_eq!(tree.get(1).unwrap(), max_data);
+
+    // Test that storing too much data fails
+    let too_large_data = vec![0u8; max_single_entry + 1];
+    assert!(tree.put(2, &too_large_data).is_err());
+
+    // Create a new tree for multiple entries test
+    let store = InMemoryPageStore::new();
+    let mut tree = DataTree::new(store);
+
+    // Test multiple smaller entries
+    let available_space = page_size - header_size - (2 * meta_entry_size) - crc_size;
+    let small_data = vec![0u8; available_space / 2];
+    assert!(tree.put(1, &small_data).is_ok());
+    assert!(tree.put(2, &small_data).is_ok());
+    assert_eq!(tree.get(1).unwrap(), small_data);
+    assert_eq!(tree.get(2).unwrap(), small_data);
+
+    // Test that adding more data than available space fails
+    let larger_data = vec![0u8; available_space];
+    assert!(tree.put(3, &larger_data).is_err());
+
+    // Test with custom page size
+    let custom_size = 1024;
+    let store = InMemoryPageStore::with_page_size(custom_size);
+    let mut tree = DataTree::new(store);
+
+    // Calculate available space for custom size
+    let max_custom_entry = custom_size - header_size - meta_entry_size - crc_size;
+    let custom_data = vec![0u8; max_custom_entry];
+    assert!(tree.put(1, &custom_data).is_ok());
+    assert_eq!(tree.get(1).unwrap(), custom_data);
+
+    // Should fail with data that's too large
+    let custom_too_large = vec![0u8; max_custom_entry + 1];
+    assert!(tree.put(2, &custom_too_large).is_err());
 } 
