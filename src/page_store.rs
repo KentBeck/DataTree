@@ -14,6 +14,7 @@ pub trait PageStore {
 }
 
 // In-memory implementation of PageStore for testing
+#[derive(Clone, Debug)]
 pub struct InMemoryPageStore {
     pages: HashMap<u64, Vec<u8>>,
     next_page_id: u64,

@@ -4,4 +4,7 @@ pub mod data_tree;
 
 pub use leaf_page::KeyNotFoundError;
 pub use page_store::{PageStore, InMemoryPageStore};
-pub use data_tree::DataTree; 
+pub use data_tree::DataTree;
+
+#[cfg(test)]
+mod tests; 
