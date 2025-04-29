@@ -154,4 +154,25 @@ mod tests {
         let prev_page = LeafPage::deserialize(&prev_page_bytes);
         assert_eq!(prev_page.next_page_id(), 0);
     }
+
+    #[test]
+    fn test_page_type_serialization() {
+        // Create store with 100 byte pages
+        let store = InMemoryPageStore::with_page_size(100);
+        let mut tree = DataTree::new(store);
+
+        // Insert some data
+        tree.put(b"key1", b"value1").unwrap();
+
+        // Get the page and verify its type
+        let store = tree.store();
+        let page_bytes = store.get_page_bytes(tree.root_page_id).unwrap();
+        let page = LeafPage::deserialize(&page_bytes);
+        
+        assert_eq!(page.page_type, PageType::LeafPage);
+
+        // Verify the page type is correctly serialized
+        let serialized = page.serialize();
+        assert_eq!(serialized[0], PageType::LeafPage.to_u8());
+    }
 } 

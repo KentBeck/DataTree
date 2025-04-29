@@ -1,6 +1,25 @@
 use std::error::Error;
 use std::fmt;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PageType {
+    LeafPage = 1,
+    // Future page types will be added here
+}
+
+impl PageType {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(PageType::LeafPage),
+            _ => None,
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+}
+
 // Define a custom error type for when a key is not found
 #[derive(Debug)]
 pub struct KeyNotFoundError;
@@ -23,6 +42,7 @@ struct KeyValueMeta {
 
 #[derive(Debug)]
 pub struct LeafPage {
+    page_type: PageType,
     page_size: usize,
     metadata: Vec<KeyValueMeta>,
     data: Vec<u8>,
@@ -33,6 +53,7 @@ pub struct LeafPage {
 impl LeafPage {
     pub fn new(page_size: usize) -> Self {
         LeafPage {
+            page_type: PageType::LeafPage,
             page_size,
             metadata: Vec::new(),
             data: Vec::new(),
@@ -43,6 +64,9 @@ impl LeafPage {
 
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.page_size);
+        
+        // Write page type (1 byte)
+        bytes.push(self.page_type.to_u8());
         
         // Write metadata count (8 bytes)
         bytes.extend_from_slice(&(self.metadata.len() as u64).to_le_bytes());
@@ -74,6 +98,10 @@ impl LeafPage {
 
     pub fn deserialize(bytes: &[u8]) -> Self {
         let mut offset = 0;
+        
+        // Read page type (1 byte)
+        let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::LeafPage);
+        offset += 1;
         
         // Read metadata count (8 bytes)
         let count = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
@@ -111,6 +139,7 @@ impl LeafPage {
         let data = bytes[offset..offset + used_bytes as usize].to_vec();
         
         LeafPage {
+            page_type,
             page_size: bytes.len(),
             metadata,
             data,
