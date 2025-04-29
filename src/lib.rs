@@ -44,6 +44,103 @@ impl LeafPage {
         }
     }
 
+    // Serialize the page into raw bytes
+    pub fn serialize(&self) -> [u8; PAGE_SIZE] {
+        let mut bytes = [0u8; PAGE_SIZE];
+        
+        // First 8 bytes: number of metadata entries (u64)
+        let meta_count = self.metadata.len() as u64;
+        bytes[0..8].copy_from_slice(&meta_count.to_le_bytes());
+        
+        // Calculate header size (metadata entries start after this)
+        let header_size = 24 + (meta_count as usize * 24); // 24 = 8 (count) + 8 (data_start) + 8 (used_bytes)
+        
+        // Next 8 bytes: data_start (u64)
+        bytes[8..16].copy_from_slice(&(header_size as u64).to_le_bytes());
+        
+        // Next 8 bytes: used_bytes (u64)
+        bytes[16..24].copy_from_slice(&(self.used_bytes as u64).to_le_bytes());
+        
+        println!("Serializing: meta_count={}, header_size={}, used_bytes={}", 
+                meta_count, header_size, self.used_bytes);
+        
+        // Write metadata entries
+        let mut offset = 24;
+        let mut data_offset = header_size;
+        
+        // First copy all the data
+        for meta in &self.metadata {
+            let data = &self.data[meta.offset..meta.offset + meta.length];
+            bytes[data_offset..data_offset + meta.length].copy_from_slice(data);
+            
+            // Write metadata entry
+            println!("Serializing metadata: key={}, new_offset={}, length={}", 
+                    meta.key, data_offset, meta.length);
+            
+            // key (8 bytes)
+            bytes[offset..offset+8].copy_from_slice(&meta.key.to_le_bytes());
+            offset += 8;
+            // offset (8 bytes)
+            bytes[offset..offset+8].copy_from_slice(&(data_offset as u64).to_le_bytes());
+            offset += 8;
+            // length (8 bytes)
+            bytes[offset..offset+8].copy_from_slice(&(meta.length as u64).to_le_bytes());
+            offset += 8;
+            
+            data_offset += meta.length;
+        }
+        
+        bytes
+    }
+
+    // Deserialize raw bytes into a page
+    pub fn deserialize(bytes: &[u8; PAGE_SIZE]) -> Self {
+        let mut page = LeafPage::new();
+        
+        // Read number of metadata entries
+        let meta_count = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
+        
+        // Read data_start
+        page.data_start = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+        
+        // Read used_bytes
+        page.used_bytes = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
+        
+        println!("Deserializing: meta_count={}, data_start={}, used_bytes={}", 
+                meta_count, page.data_start, page.used_bytes);
+        
+        // Read metadata entries
+        let mut offset = 24;
+        for i in 0..meta_count {
+            let key_bytes: [u8; 8] = bytes[offset..offset+8].try_into().unwrap();
+            let key = u64::from_le_bytes(key_bytes);
+            offset += 8;
+            
+            let offset_bytes: [u8; 8] = bytes[offset..offset+8].try_into().unwrap();
+            let meta_offset = u64::from_le_bytes(offset_bytes) as usize;
+            offset += 8;
+            
+            let length_bytes: [u8; 8] = bytes[offset..offset+8].try_into().unwrap();
+            let length = u64::from_le_bytes(length_bytes) as usize;
+            offset += 8;
+            
+            println!("Deserializing metadata {}: key={}, offset={}, length={}", 
+                    i, key, meta_offset, length);
+            
+            // Copy the data to its final location in the page
+            page.data[meta_offset..meta_offset + length]
+                .copy_from_slice(&bytes[meta_offset..meta_offset + length]);
+            
+            page.metadata.push(KeyValueMeta {
+                key,
+                offset: meta_offset,
+                length,
+            });
+        }
+        
+        page
+    }
+
     /// Returns true if the page has been modified since last clear
     pub fn is_dirty(&self) -> bool {
         self.dirty
@@ -197,15 +294,15 @@ impl LeafPage {
 
 // Trait for storing and retrieving pages
 pub trait PageStore {
-    fn get_page(&self, page_id: u64) -> Option<&LeafPage>;
-    fn get_page_mut(&mut self, page_id: u64) -> Option<&mut LeafPage>;
+    fn get_page_bytes(&self, page_id: u64) -> Option<[u8; PAGE_SIZE]>;
+    fn put_page_bytes(&mut self, page_id: u64, data: &[u8; PAGE_SIZE]);
     fn allocate_page(&mut self) -> u64;
     fn flush(&mut self) -> Result<(), Box<dyn Error>>;
 }
 
 // In-memory implementation of PageStore for testing
 pub struct InMemoryPageStore {
-    pages: HashMap<u64, LeafPage>,
+    pages: HashMap<u64, [u8; PAGE_SIZE]>,
     next_page_id: u64,
 }
 
@@ -219,23 +316,23 @@ impl InMemoryPageStore {
 }
 
 impl PageStore for InMemoryPageStore {
-    fn get_page(&self, page_id: u64) -> Option<&LeafPage> {
-        self.pages.get(&page_id)
+    fn get_page_bytes(&self, page_id: u64) -> Option<[u8; PAGE_SIZE]> {
+        self.pages.get(&page_id).copied()
     }
 
-    fn get_page_mut(&mut self, page_id: u64) -> Option<&mut LeafPage> {
-        self.pages.get_mut(&page_id)
+    fn put_page_bytes(&mut self, page_id: u64, data: &[u8; PAGE_SIZE]) {
+        self.pages.insert(page_id, *data);
     }
 
     fn allocate_page(&mut self) -> u64 {
         let page_id = self.next_page_id;
         self.next_page_id += 1;
-        self.pages.insert(page_id, LeafPage::new());
+        let empty_page = LeafPage::new().serialize();
+        self.pages.insert(page_id, empty_page);
         page_id
     }
 
     fn flush(&mut self) -> Result<(), Box<dyn Error>> {
-        // In memory store doesn't need to do anything on flush
         Ok(())
     }
 }
@@ -255,23 +352,32 @@ impl<S: PageStore> DataTree<S> {
     }
 
     pub fn get(&self, key: u64) -> Result<Vec<u8>, KeyNotFoundError> {
-        let page = self.store.get_page(self.root_page_id)
+        let page_bytes = self.store.get_page_bytes(self.root_page_id)
             .ok_or(KeyNotFoundError)?;
+        let page = LeafPage::deserialize(&page_bytes);
         let data = page.get(key)?;
         Ok(data.to_vec())
     }
 
     pub fn put(&mut self, key: u64, value: &[u8]) -> Result<(), Box<dyn Error>> {
-        let page = self.store.get_page_mut(self.root_page_id)
+        let page_bytes = self.store.get_page_bytes(self.root_page_id)
             .ok_or("Root page not found")?;
+        let mut page = LeafPage::deserialize(&page_bytes);
         page.insert(key, value)?;
+        if page.is_dirty() {
+            self.store.put_page_bytes(self.root_page_id, &page.serialize());
+        }
         Ok(())
     }
 
     pub fn delete(&mut self, key: u64) -> Result<(), Box<dyn Error>> {
-        let page = self.store.get_page_mut(self.root_page_id)
+        let page_bytes = self.store.get_page_bytes(self.root_page_id)
             .ok_or("Root page not found")?;
+        let mut page = LeafPage::deserialize(&page_bytes);
         page.delete(key)?;
+        if page.is_dirty() {
+            self.store.put_page_bytes(self.root_page_id, &page.serialize());
+        }
         Ok(())
     }
 
@@ -476,5 +582,46 @@ mod tests {
         // Test delete
         tree.delete(1).unwrap();
         assert!(tree.get(1).is_err());
+    }
+
+    #[test]
+    fn test_page_serialization() {
+        let mut page = LeafPage::new();
+        
+        // Insert some data
+        page.insert(1, &[1, 2, 3]).unwrap();
+        page.insert(2, &[4, 5, 6]).unwrap();
+        
+        // Serialize
+        let bytes = page.serialize();
+        
+        // Deserialize
+        let new_page = LeafPage::deserialize(&bytes);
+        
+        // Verify the data is preserved
+        assert_eq!(new_page.get(1).unwrap(), &[1, 2, 3]);
+        assert_eq!(new_page.get(2).unwrap(), &[4, 5, 6]);
+    }
+
+    #[test]
+    fn test_data_tree_with_serialization() {
+        let store = InMemoryPageStore::new();
+        let mut tree = DataTree::new(store);
+        
+        // Insert data
+        tree.put(1, &[1, 2, 3]).unwrap();
+        tree.put(2, &[4, 5, 6]).unwrap();
+        
+        // Verify data
+        assert_eq!(tree.get(1).unwrap(), vec![1, 2, 3]);
+        assert_eq!(tree.get(2).unwrap(), vec![4, 5, 6]);
+        
+        // Update data
+        tree.put(1, &[7, 8, 9]).unwrap();
+        assert_eq!(tree.get(1).unwrap(), vec![7, 8, 9]);
+        
+        // Delete data
+        tree.delete(2).unwrap();
+        assert!(tree.get(2).is_err());
     }
 }
