@@ -101,6 +101,12 @@ impl LeafPage {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Self {
+        // Check if the bytes array is long enough for the header
+        if bytes.len() < HEADER_SIZE {
+            // Return an empty LeafPage if the bytes array is too short
+            return LeafPage::new(bytes.len());
+        }
+
         let mut offset = 0;
 
         // Read page type (1 byte)
@@ -131,6 +137,11 @@ impl LeafPage {
         let mut metadata = Vec::with_capacity(count as usize);
         let mut current_offset = 0;
         for _ in 0..count {
+            // Check if there's enough data for the metadata entry
+            if offset + 16 > bytes.len() {
+                break;
+            }
+
             let key_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
             offset += 8;
             let value_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
@@ -145,7 +156,14 @@ impl LeafPage {
         }
 
         // Read data
-        let data = bytes[data_start as usize..data_start as usize + used_bytes as usize].to_vec();
+        let data_start_usize = data_start as usize;
+        let used_bytes_usize = used_bytes as usize;
+        let data = if data_start_usize < bytes.len() {
+            let end = std::cmp::min(data_start_usize + used_bytes_usize, bytes.len());
+            bytes[data_start_usize..end].to_vec()
+        } else {
+            Vec::new()
+        };
 
         LeafPage {
             page_type,

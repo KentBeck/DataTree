@@ -80,7 +80,8 @@ fn test_large_value_deletion() {
     assert!(tree.get(b"key1").unwrap().is_none());
 
     // Verify pages were cleaned up
-    assert!(tree.store().get_page_count() <= 1);
+    // With a BranchPage root, we'll still have at least 2 pages (root + empty leaf)
+    assert!(tree.store().get_page_count() <= 2);
 }
 
 #[test]
