@@ -102,6 +102,8 @@ impl InMemoryPageStore {
     }
 }
 
+const CRC_SIZE: usize = 4;
+
 impl PageStore for InMemoryPageStore {
     fn get_page_bytes(&self, page_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
         let bytes = self.pages.get(&page_id)
@@ -117,7 +119,7 @@ impl PageStore for InMemoryPageStore {
     }
 
     fn put_page_bytes(&mut self, page_id: u64, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-        if bytes.len() + 4 > self.page_size {  // +4 for CRC
+        if bytes.len() + CRC_SIZE > self.page_size {  // +4 for CRC
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Page too large",
