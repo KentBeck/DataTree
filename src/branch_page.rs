@@ -1,4 +1,4 @@
-use crate::leaf_page::PageType;
+use crate::data_tree::PageType;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BranchEntry {

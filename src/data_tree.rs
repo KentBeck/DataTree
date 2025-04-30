@@ -3,6 +3,27 @@ use std::error::Error;
 use crate::leaf_page::LeafPage;
 use crate::page_store::PageStore;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PageType {
+    LeafPage = 1,
+    BranchPage = 2,
+    // Future page types will be added here
+}
+
+impl PageType {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(PageType::LeafPage),
+            2 => Some(PageType::BranchPage),
+            _ => None,
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+}
+
 pub struct DataTree<S: PageStore> {
     store: S,
     root_page_id: u64,
@@ -26,11 +47,11 @@ impl<S: PageStore> DataTree<S> {
         loop {
             let page_bytes = self.store.get_page_bytes(current_page_id)?;
             let page = LeafPage::deserialize(&page_bytes);
-            
+
             if let Some(value) = page.get(key) {
                 return Ok(Some(value.to_vec()));
             }
-            
+
             if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
                 current_page_id = next_page_id;
             } else {
@@ -50,32 +71,32 @@ impl<S: PageStore> DataTree<S> {
         loop {
             let page_bytes = self.store.get_page_bytes(current_page_id)?;
             let mut page = LeafPage::deserialize(&page_bytes);
-            
+
             if page.insert(key, value) {
                 self.store.put_page_bytes(current_page_id, &page.serialize())?;
                 self.dirty_pages.insert(current_page_id);
                 return Ok(());
             }
-            
+
             // Try to split the page if it's full
             if let Some(mut new_page) = page.split() {
                 // Create new page
                 let new_page_id = self.store.allocate_page();
-                
+
                 // Update links
                 let next_page_id = page.next_page_id();
                 new_page.set_prev_page_id(current_page_id);
                 new_page.set_next_page_id(next_page_id);
-                
+
                 // Save the new page
                 self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
                 self.dirty_pages.insert(new_page_id);
-                
+
                 // Update current page's next pointer
                 page.set_next_page_id(new_page_id);
                 self.store.put_page_bytes(current_page_id, &page.serialize())?;
                 self.dirty_pages.insert(current_page_id);
-                
+
                 // Update next page's prev pointer if it exists
                 if next_page_id != 0 {
                     let next_bytes = self.store.get_page_bytes(next_page_id)?;
@@ -84,14 +105,14 @@ impl<S: PageStore> DataTree<S> {
                     self.store.put_page_bytes(next_page_id, &next_page.serialize())?;
                     self.dirty_pages.insert(next_page_id);
                 }
-                
+
                 // Try to insert into the current page again
                 if page.insert(key, value) {
                     self.store.put_page_bytes(current_page_id, &page.serialize())?;
                     self.dirty_pages.insert(current_page_id);
                     return Ok(());
                 }
-                
+
                 // If it doesn't fit in the current page, try the new page
                 if new_page.insert(key, value) {
                     self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
@@ -99,7 +120,7 @@ impl<S: PageStore> DataTree<S> {
                     return Ok(());
                 }
             }
-            
+
             if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
                 current_page_id = next_page_id;
             } else {
@@ -122,17 +143,17 @@ impl<S: PageStore> DataTree<S> {
         loop {
             let page_bytes = self.store.get_page_bytes(current_page_id)?;
             let mut page = LeafPage::deserialize(&page_bytes);
-            
+
             if page.delete(key) {
                 self.store.put_page_bytes(current_page_id, &page.serialize())?;
                 self.dirty_pages.insert(current_page_id);
-                
+
                 // Check if page is empty and not root
                 if page.metadata().is_empty() && current_page_id != self.root_page_id {
                     // Get previous and next page IDs
                     let prev_page_id = page.prev_page_id();
                     let next_page_id = page.next_page_id();
-                    
+
                     // Update links
                     if prev_page_id != 0 {
                         let prev_bytes = self.store.get_page_bytes(prev_page_id)?;
@@ -141,7 +162,7 @@ impl<S: PageStore> DataTree<S> {
                         self.store.put_page_bytes(prev_page_id, &prev_page.serialize())?;
                         self.dirty_pages.insert(prev_page_id);
                     }
-                    
+
                     if next_page_id != 0 {
                         let next_bytes = self.store.get_page_bytes(next_page_id)?;
                         let mut next_page = LeafPage::deserialize(&next_bytes);
@@ -149,15 +170,15 @@ impl<S: PageStore> DataTree<S> {
                         self.store.put_page_bytes(next_page_id, &next_page.serialize())?;
                         self.dirty_pages.insert(next_page_id);
                     }
-                    
+
                     // Free the empty page
                     self.store.free_page(current_page_id)?;
                     self.dirty_pages.remove(&current_page_id);
                 }
-                
+
                 return Ok(true);
             }
-            
+
             if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
                 current_page_id = next_page_id;
             } else {
@@ -187,4 +208,4 @@ impl<S: PageStore> DataTree<S> {
     pub fn store_mut(&mut self) -> &mut S {
         &mut self.store
     }
-} 
+}

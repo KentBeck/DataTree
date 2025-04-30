@@ -1,26 +1,6 @@
 use std::error::Error;
 use std::fmt;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PageType {
-    LeafPage = 1,
-    BranchPage = 2,
-    // Future page types will be added here
-}
-
-impl PageType {
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(PageType::LeafPage),
-            2 => Some(PageType::BranchPage),
-            _ => None,
-        }
-    }
-
-    pub fn to_u8(self) -> u8 {
-        self as u8
-    }
-}
+use crate::data_tree::PageType;
 
 // Define a custom error type for when a key is not found
 #[derive(Debug)]
