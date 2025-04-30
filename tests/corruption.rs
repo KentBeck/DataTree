@@ -1,5 +1,6 @@
-use data_tree::{DataTree, LeafPage, PageStore};
-use data_tree::page_store::{InMemoryPageStore, PageCorruptionError};
+use data_tree::DataTree;
+use data_tree::leaf_page::LeafPage;
+use data_tree::page_store::{PageStore, InMemoryPageStore, PageCorruptionError};
 
 #[test]
 fn test_page_corruption_detection() {
@@ -172,7 +173,7 @@ fn test_branch_page_crc_verification_on_updates() {
     let root_page = LeafPage::deserialize(&root_page_bytes);
     let branch_page_id = root_page.next_page_id();
     assert!(branch_page_id > 0, "Expected a branch page to be created");
-    
+
     // Verify we can read the branch page
     let branch_page_bytes = store.get_page_bytes(branch_page_id).unwrap();
     assert!(branch_page_bytes.len() > 0);
@@ -189,4 +190,4 @@ fn test_branch_page_crc_verification_on_updates() {
     // Verify we can still read the branch page
     let branch_page_bytes = store.get_page_bytes(branch_page_id).unwrap();
     assert!(branch_page_bytes.len() > 0);
-} 
+}

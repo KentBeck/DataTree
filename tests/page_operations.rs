@@ -1,5 +1,7 @@
-use data_tree::{DataTree, LeafPage, PageType, PageStore};
-use data_tree::page_store::InMemoryPageStore;
+use data_tree::DataTree;
+use data_tree::leaf_page::LeafPage;
+use data_tree::data_tree::PageType;
+use data_tree::page_store::{PageStore, InMemoryPageStore};
 
 #[test]
 fn test_page_splitting() {
@@ -75,7 +77,7 @@ fn test_page_cleanup_after_deletion() {
     // Get the page IDs before deletion
     let mut page_ids = Vec::new();
     let mut current_page_id = tree.root_page_id();
-    
+
     {
         let store = tree.store();
         while let Some(next_page_id) = store.get_next_page_id(current_page_id) {
@@ -87,14 +89,14 @@ fn test_page_cleanup_after_deletion() {
 
     // We should have at least 2 pages
     assert!(page_ids.len() >= 2);
-    
+
     // Delete all entries from the last page
     let last_page_id = *page_ids.last().unwrap();
     let keys_to_delete = {
         let store = tree.store();
         let last_page_bytes = store.get_page_bytes(last_page_id).unwrap();
         let last_page = LeafPage::deserialize(&last_page_bytes);
-        
+
         // Collect keys to delete
         last_page.metadata().iter().map(|meta| {
             let key = &last_page.data()[meta.key_offset..meta.key_offset + meta.key_length];
@@ -110,14 +112,14 @@ fn test_page_cleanup_after_deletion() {
     // Verify the page no longer exists
     let store = tree.store();
     assert!(!store.page_exists(last_page_id));
-    
+
     // Verify the page is no longer in the linked list
     let mut current_page_id = tree.root_page_id();
     while let Some(next_page_id) = store.get_next_page_id(current_page_id) {
         assert_ne!(next_page_id, last_page_id);
         current_page_id = next_page_id;
     }
-    
+
     // Verify the previous page's next pointer is updated
     let prev_page_id = page_ids[page_ids.len() - 2];
     let prev_page_bytes = store.get_page_bytes(prev_page_id).unwrap();
@@ -138,10 +140,10 @@ fn test_page_type_serialization() {
     let store = tree.store();
     let page_bytes = store.get_page_bytes(tree.root_page_id()).unwrap();
     let page = LeafPage::deserialize(&page_bytes);
-    
+
     assert_eq!(page.page_type(), PageType::LeafPage);
 
     // Verify the page type is correctly serialized
     let serialized = page.serialize();
     assert_eq!(serialized[0], PageType::LeafPage.to_u8());
-} 
+}

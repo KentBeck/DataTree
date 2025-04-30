@@ -1,5 +1,5 @@
-use data_tree::{DataTree, PageStore};
-use data_tree::page_store::InMemoryPageStore;
+use data_tree::DataTree;
+use data_tree::page_store::{PageStore, InMemoryPageStore};
 
 #[test]
 fn test_large_value_splitting() {
@@ -103,4 +103,4 @@ fn test_mixed_size_values() {
 
     // Verify multiple pages were used
     assert!(tree.store().get_page_count() >= 2);
-} 
+}
