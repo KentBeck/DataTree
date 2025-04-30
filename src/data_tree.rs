@@ -398,12 +398,14 @@ impl<S: PageStore> DataTree<S> {
         &self.dirty_pages
     }
 
-    pub fn root_page_id(&self) -> u64 {
-        self.root_page_id
-    }
-
+    /// Returns a reference to the store
     pub fn store(&self) -> &S {
         &self.store
+    }
+
+    /// Returns the root page ID
+    pub fn root_page_id(&self) -> u64 {
+        self.root_page_id
     }
 
     pub fn store_mut(&mut self) -> &mut S {
