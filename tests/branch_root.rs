@@ -8,7 +8,7 @@ use data_tree::page_store::{PageStore, InMemoryPageStore};
 fn test_branch_root_creation() {
     // Create a DataTree with a BranchPage as the root
     let store = InMemoryPageStore::with_page_size(1024);
-    let tree = DataTree::new_with_branch_root(store);
+    let tree = DataTree::new(store);
 
     // Get the root page
     let root_page_bytes = tree.store().get_page_bytes(tree.root_page_id()).unwrap();
@@ -34,7 +34,7 @@ fn test_branch_root_creation() {
 fn test_branch_root_operations() {
     // Create a DataTree with a BranchPage as the root
     let store = InMemoryPageStore::with_page_size(1024);
-    let mut tree = DataTree::new_with_branch_root(store);
+    let mut tree = DataTree::new(store);
 
     // Insert some key-value pairs
     for i in 0..10 {

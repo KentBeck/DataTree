@@ -32,21 +32,8 @@ pub struct DataTree<S: PageStore> {
 }
 
 impl<S: PageStore> DataTree<S> {
-    // This method creates a DataTree with a LeafPage as the root
-    pub fn new(mut store: S) -> Self {
-        let root_page_id = store.allocate_page();
-        let root_page = LeafPage::new(store.page_size());
-        store.put_page_bytes(root_page_id, &root_page.serialize()).unwrap();
-
-        DataTree {
-            store,
-            root_page_id,
-            dirty_pages: HashSet::new(),
-        }
-    }
-
     // This method creates a DataTree with a BranchPage as the root
-    pub fn new_with_branch_root(mut store: S) -> Self {
+    pub fn new(mut store: S) -> Self {
         // Allocate a page for the leaf page
         let leaf_page_id = store.allocate_page();
         let leaf_page = LeafPage::new(store.page_size());
