@@ -32,8 +32,8 @@ pub struct DataTree<S: PageStore> {
 }
 
 impl<S: PageStore> DataTree<S> {
+    // This method creates a DataTree with a LeafPage as the root
     pub fn new(mut store: S) -> Self {
-        // For now, just create a LeafPage as the root for compatibility with tests
         let root_page_id = store.allocate_page();
         let root_page = LeafPage::new(store.page_size());
         store.put_page_bytes(root_page_id, &root_page.serialize()).unwrap();
