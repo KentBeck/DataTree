@@ -5,4 +5,5 @@ pub mod branch_page;
 
 pub use leaf_page::{KeyNotFoundError, LeafPage, PageType};
 pub use page_store::{PageStore, InMemoryPageStore};
-pub use data_tree::DataTree; 
+pub use data_tree::DataTree;
+pub use branch_page::{BranchPage, BranchEntry};

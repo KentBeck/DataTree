@@ -43,26 +43,7 @@ pub struct KeyValueMeta {
     pub value_length: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BranchEntry {
-    pub page_id: u64,
-    pub first_key: u64,
-}
 
-impl BranchEntry {
-    fn serialize(&self) -> [u8; 16] {
-        let mut bytes = [0u8; 16];
-        bytes[0..8].copy_from_slice(&self.page_id.to_le_bytes());
-        bytes[8..16].copy_from_slice(&self.first_key.to_le_bytes());
-        bytes
-    }
-
-    fn deserialize(bytes: &[u8]) -> Self {
-        let page_id = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
-        let first_key = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        BranchEntry { page_id, first_key }
-    }
-}
 
 #[derive(Debug)]
 pub struct LeafPage {
@@ -88,69 +69,69 @@ impl LeafPage {
 
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.page_size);
-        
+
         // Write page type (1 byte)
         bytes.push(self.page_type.to_u8());
-        
+
         // Write metadata count (8 bytes)
         bytes.extend_from_slice(&(self.metadata.len() as u64).to_le_bytes());
-        
+
         // Calculate data start offset
         let header_size = 1 + 8 + 8 + 8 + 8 + 8; // page_type + count + data_start + used_bytes + prev_page_id + next_page_id
         let metadata_size = self.metadata.len() * 16; // 8 bytes for key_length + 8 bytes for value_length
         let data_start = header_size + metadata_size;
-        
+
         // Write data start offset (8 bytes)
         bytes.extend_from_slice(&(data_start as u64).to_le_bytes());
-        
+
         // Write used bytes (8 bytes)
         bytes.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
-        
+
         // Write prev_page_id (8 bytes)
         bytes.extend_from_slice(&self.prev_page_id.to_le_bytes());
-        
+
         // Write next_page_id (8 bytes)
         bytes.extend_from_slice(&self.next_page_id.to_le_bytes());
-        
+
         // Write metadata entries
         for meta in &self.metadata {
             bytes.extend_from_slice(&(meta.key_length as u64).to_le_bytes());
             bytes.extend_from_slice(&(meta.value_length as u64).to_le_bytes());
         }
-        
+
         // Write data
         bytes.extend_from_slice(&self.data);
-        
+
         bytes
     }
 
     pub fn deserialize(bytes: &[u8]) -> Self {
         let mut offset = 0;
-        
+
         // Read page type (1 byte)
         let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::LeafPage);
         offset += 1;
-        
+
         // Read metadata count (8 bytes)
         let count = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Read data start offset (8 bytes)
         let data_start = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Read used bytes (8 bytes)
         let used_bytes = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Read prev_page_id (8 bytes)
         let prev_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Read next_page_id (8 bytes)
         let next_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Read metadata entries
         let mut metadata = Vec::with_capacity(count as usize);
         let mut current_offset = 0;
@@ -167,10 +148,10 @@ impl LeafPage {
             });
             current_offset += key_length + value_length;
         }
-        
+
         // Read data
         let data = bytes[data_start as usize..data_start as usize + used_bytes as usize].to_vec();
-        
+
         LeafPage {
             page_type,
             page_size: bytes.len(),
@@ -309,14 +290,14 @@ impl LeafPage {
         // Calculate space needed for new entry
         let new_metadata_size = std::mem::size_of::<KeyValueMeta>();
         let new_data_size = key.len() + value.len();
-        
+
         // Calculate current space used
         let current_metadata_size = self.metadata.len() * std::mem::size_of::<KeyValueMeta>();
         let current_data_size = self.data.len();
-        
+
         // Add header size (metadata count, data start, used bytes)
         let header_size = 3 * std::mem::size_of::<u64>();
-        
+
         // Check if we have enough space
         current_metadata_size + current_data_size + new_metadata_size + new_data_size + header_size > self.page_size
     }
@@ -448,145 +429,3 @@ impl LeafPage {
     }
 }
 
-#[derive(Debug)]
-pub struct BranchPage {
-    pub page_type: PageType,
-    pub page_size: usize,
-    pub entries: Vec<BranchEntry>,
-    pub prev_page_id: u64,
-    pub next_page_id: u64,
-}
-
-impl BranchPage {
-    pub fn new(page_size: usize) -> Self {
-        BranchPage {
-            page_type: PageType::BranchPage,
-            page_size,
-            entries: Vec::new(),
-            prev_page_id: 0,
-            next_page_id: 0,
-        }
-    }
-
-    pub fn insert(&mut self, page_id: u64, first_key: u64) -> bool {
-        let entry = BranchEntry { page_id, first_key };
-        
-        // Find insertion point to maintain sorted order
-        let pos = self.entries.binary_search_by_key(&first_key, |e| e.first_key)
-            .unwrap_or_else(|pos| pos);
-        
-        self.entries.insert(pos, entry);
-        true
-    }
-
-    pub fn find_page_id(&self, key: u64) -> Option<u64> {
-        if self.entries.is_empty() {
-            return None;
-        }
-
-        // If key is less than first entry's key, return first page
-        if key < self.entries[0].first_key {
-            return Some(self.entries[0].page_id);
-        }
-
-        // Find the entry whose range contains this key
-        for i in 0..self.entries.len() {
-            let current_key = self.entries[i].first_key;
-            let next_key = if i + 1 < self.entries.len() {
-                self.entries[i + 1].first_key
-            } else {
-                u64::MAX
-            };
-
-            if key >= current_key && key < next_key {
-                return Some(self.entries[i].page_id);
-            }
-        }
-
-        // If we get here, the key is in the last page
-        Some(self.entries.last().unwrap().page_id)
-    }
-
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(self.page_size);
-        
-        // Write page type (1 byte)
-        bytes.push(self.page_type.to_u8());
-        
-        // Write number of entries (8 bytes)
-        bytes.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
-        
-        // Write prev_page_id (8 bytes)
-        bytes.extend_from_slice(&self.prev_page_id.to_le_bytes());
-        
-        // Write next_page_id (8 bytes)
-        bytes.extend_from_slice(&self.next_page_id.to_le_bytes());
-        
-        // Write entries
-        for entry in &self.entries {
-            bytes.extend_from_slice(&entry.serialize());
-        }
-        
-        bytes
-    }
-
-    pub fn deserialize(bytes: &[u8]) -> Self {
-        let mut offset = 0;
-        
-        // Read page type (1 byte)
-        let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::BranchPage);
-        offset += 1;
-        
-        // Read number of entries (8 bytes)
-        let count = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
-        offset += 8;
-        
-        // Read prev_page_id (8 bytes)
-        let prev_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
-        offset += 8;
-        
-        // Read next_page_id (8 bytes)
-        let next_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
-        offset += 8;
-        
-        // Read entries
-        let mut entries = Vec::with_capacity(count as usize);
-        for _ in 0..count {
-            let entry_bytes = &bytes[offset..offset + 16];
-            entries.push(BranchEntry::deserialize(entry_bytes));
-            offset += 16;
-        }
-        
-        BranchPage {
-            page_type,
-            page_size: bytes.len(),
-            entries,
-            prev_page_id,
-            next_page_id,
-        }
-    }
-
-    pub fn page_type(&self) -> PageType {
-        self.page_type
-    }
-
-    pub fn entries(&self) -> &[BranchEntry] {
-        &self.entries
-    }
-
-    pub fn prev_page_id(&self) -> u64 {
-        self.prev_page_id
-    }
-
-    pub fn next_page_id(&self) -> u64 {
-        self.next_page_id
-    }
-
-    pub fn set_prev_page_id(&mut self, page_id: u64) {
-        self.prev_page_id = page_id;
-    }
-
-    pub fn set_next_page_id(&mut self, page_id: u64) {
-        self.next_page_id = page_id;
-    }
-} 
