@@ -16,7 +16,7 @@ impl Error for KeyNotFoundError {}
 
 // Metadata for each key-value pair
 #[derive(Debug, Clone, Copy)]
-pub struct KeyValueMeta {
+pub struct LeafPageEntry {
     pub key_offset: usize,
     pub key_length: usize,
     pub value_offset: usize,
@@ -25,11 +25,26 @@ pub struct KeyValueMeta {
 
 
 
+// Constants for page header sizes
+pub const PAGE_TYPE_SIZE: usize = 1; // 1 byte for page type
+pub const COUNT_SIZE: usize = 8;     // 8 bytes for metadata count
+pub const DATA_START_SIZE: usize = 8; // 8 bytes for data start offset
+pub const USED_BYTES_SIZE: usize = 8; // 8 bytes for used bytes
+pub const PREV_PAGE_ID_SIZE: usize = 8; // 8 bytes for previous page ID
+pub const NEXT_PAGE_ID_SIZE: usize = 8; // 8 bytes for next page ID
+pub const HEADER_SIZE: usize = PAGE_TYPE_SIZE + COUNT_SIZE + DATA_START_SIZE +
+                              USED_BYTES_SIZE + PREV_PAGE_ID_SIZE + NEXT_PAGE_ID_SIZE;
+
+// Constants for metadata entry sizes
+pub const KEY_LENGTH_SIZE: usize = 8; // 8 bytes for key length
+pub const VALUE_LENGTH_SIZE: usize = 8; // 8 bytes for value length
+pub const METADATA_ENTRY_SIZE: usize = KEY_LENGTH_SIZE + VALUE_LENGTH_SIZE;
+
 #[derive(Debug)]
 pub struct LeafPage {
     pub page_type: PageType,
     pub page_size: usize,
-    pub metadata: Vec<KeyValueMeta>,
+    pub metadata: Vec<LeafPageEntry>,
     pub data: Vec<u8>,
     pub prev_page_id: u64,
     pub next_page_id: u64,
@@ -57,9 +72,9 @@ impl LeafPage {
         bytes.extend_from_slice(&(self.metadata.len() as u64).to_le_bytes());
 
         // Calculate data start offset
-        let header_size = 1 + 8 + 8 + 8 + 8 + 8; // page_type + count + data_start + used_bytes + prev_page_id + next_page_id
-        let metadata_size = self.metadata.len() * 16; // 8 bytes for key_length + 8 bytes for value_length
-        let data_start = header_size + metadata_size;
+        // Using HEADER_SIZE constant instead of magic numbers
+        let metadata_size = self.metadata.len() * METADATA_ENTRY_SIZE;
+        let data_start = HEADER_SIZE + metadata_size;
 
         // Write data start offset (8 bytes)
         bytes.extend_from_slice(&(data_start as u64).to_le_bytes());
@@ -120,7 +135,7 @@ impl LeafPage {
             offset += 8;
             let value_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
             offset += 8;
-            metadata.push(KeyValueMeta {
+            metadata.push(LeafPageEntry {
                 key_offset: current_offset,
                 key_length,
                 value_offset: current_offset + key_length,
@@ -146,7 +161,7 @@ impl LeafPage {
         self.page_type
     }
 
-    pub fn metadata(&self) -> &[KeyValueMeta] {
+    pub fn metadata(&self) -> &[LeafPageEntry] {
         &self.metadata
     }
 
@@ -209,7 +224,7 @@ impl LeafPage {
             self.compact_data();
 
             // Add new data and metadata
-            let new_meta = KeyValueMeta {
+            let new_meta = LeafPageEntry {
                 key_offset: self.data.len(),
                 key_length: key.len(),
                 value_offset: self.data.len() + key.len(),
@@ -225,9 +240,9 @@ impl LeafPage {
 
         // Calculate total space needed for new entry
         let required_space = key.len() + value.len();
-        let metadata_size = (self.metadata.len() + 1) * 16; // 8 bytes for key_length + 8 bytes for value_length
-        let header_size = 1 + 8 + 8 + 8 + 8 + 8; // page_type + count + data_start + used_bytes + prev_page_id + next_page_id
-        let total_space = self.data.len() + required_space + metadata_size + header_size;
+        let metadata_size = (self.metadata.len() + 1) * METADATA_ENTRY_SIZE;
+        // Using HEADER_SIZE constant instead of magic numbers
+        let total_space = self.data.len() + required_space + metadata_size + HEADER_SIZE;
 
         // Check if we have enough space
         if total_space > self.page_size {
@@ -235,7 +250,7 @@ impl LeafPage {
         }
 
         // Create new metadata
-        let new_meta = KeyValueMeta {
+        let new_meta = LeafPageEntry {
             key_offset: self.data.len(),
             key_length: key.len(),
             value_offset: self.data.len() + key.len(),
@@ -268,18 +283,17 @@ impl LeafPage {
 
     pub fn is_full(&self, key: &[u8], value: &[u8]) -> bool {
         // Calculate space needed for new entry
-        let new_metadata_size = std::mem::size_of::<KeyValueMeta>();
+        let new_metadata_size = std::mem::size_of::<LeafPageEntry>();
         let new_data_size = key.len() + value.len();
 
         // Calculate current space used
-        let current_metadata_size = self.metadata.len() * std::mem::size_of::<KeyValueMeta>();
+        let current_metadata_size = self.metadata.len() * std::mem::size_of::<LeafPageEntry>();
         let current_data_size = self.data.len();
 
-        // Add header size (metadata count, data start, used bytes)
-        let header_size = 3 * std::mem::size_of::<u64>();
+        // Using HEADER_SIZE constant instead of calculating it again
 
         // Check if we have enough space
-        current_metadata_size + current_data_size + new_metadata_size + new_data_size + header_size > self.page_size
+        current_metadata_size + current_data_size + new_metadata_size + new_data_size + HEADER_SIZE > self.page_size
     }
 
     pub fn split(&mut self) -> Option<LeafPage> {
@@ -319,7 +333,7 @@ impl LeafPage {
         for (i, (key, value)) in all_data.into_iter().enumerate() {
             if i < split_point {
                 // Keep in current page
-                let new_meta = KeyValueMeta {
+                let new_meta = LeafPageEntry {
                     key_offset: self.data.len(),
                     key_length: key.len(),
                     value_offset: self.data.len() + key.len(),
@@ -330,7 +344,7 @@ impl LeafPage {
                 self.metadata.push(new_meta);
             } else {
                 // Move to new page
-                let new_meta = KeyValueMeta {
+                let new_meta = LeafPageEntry {
                     key_offset: new_data.len(),
                     key_length: key.len(),
                     value_offset: new_data.len() + key.len(),
@@ -377,7 +391,7 @@ impl LeafPage {
             let key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
             let value = &self.data[meta.value_offset..meta.value_offset + meta.value_length];
 
-            let new_meta = KeyValueMeta {
+            let new_meta = LeafPageEntry {
                 key_offset: new_data.len(),
                 key_length: meta.key_length,
                 value_offset: new_data.len() + meta.key_length,
