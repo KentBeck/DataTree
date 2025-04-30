@@ -411,4 +411,18 @@ impl<S: PageStore> DataTree<S> {
     pub fn store_mut(&mut self) -> &mut S {
         &mut self.store
     }
+
+    /// Consumes the DataTree and returns the underlying store
+    pub fn into_store(self) -> S {
+        self.store
+    }
+
+    /// Creates a DataTree from an existing store and root page ID
+    pub fn from_existing(store: S, root_page_id: u64) -> Self {
+        DataTree {
+            store,
+            root_page_id,
+            dirty_pages: HashSet::new(),
+        }
+    }
 }
