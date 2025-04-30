@@ -1,4 +1,4 @@
-use data_tree::{DataTree, PageStore};
+use data_tree::{DataTree, LeafPage, PageStore};
 use data_tree::page_store::{InMemoryPageStore, PageCorruptionError};
 
 #[test]
@@ -122,4 +122,71 @@ fn test_crc_verification_on_page_cleanup() {
     // Verify other pages are still accessible
     assert_eq!(tree.get(b"key0").unwrap().unwrap(), b"value0");
     assert_eq!(tree.get(b"key1").unwrap().unwrap(), b"value1");
+}
+
+#[test]
+fn test_branch_page_corruption_detection() {
+    // Create store with 100 byte pages
+    let store = InMemoryPageStore::with_page_size(100);
+    let mut tree = DataTree::new(store);
+
+    // Insert data that will create a branch page
+    for i in 0..10 {
+        let key = format!("key{}", i).into_bytes();
+        let value = format!("value{}", i).into_bytes();
+        tree.put(&key, &value).unwrap();
+    }
+
+    // Get the branch page ID
+    let store = tree.store();
+    let root_page_id = tree.root_page_id();
+    let root_page_bytes = store.get_page_bytes(root_page_id).unwrap();
+    let root_page = LeafPage::deserialize(&root_page_bytes);
+    let branch_page_id = root_page.next_page_id();
+
+    // Corrupt the branch page
+    tree.store_mut().corrupt_page_for_testing(branch_page_id);
+
+    // Attempt to read from the corrupted branch page - should fail with corruption error
+    let result = tree.store().get_page_bytes(branch_page_id);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().downcast_ref::<PageCorruptionError>().is_some());
+}
+
+#[test]
+fn test_branch_page_crc_verification_on_updates() {
+    let store = InMemoryPageStore::with_page_size(100);
+    let mut tree = DataTree::new(store);
+
+    // Insert enough data to create a branch page
+    for i in 0..10 {
+        let key = format!("key{}", i).into_bytes();
+        let value = format!("value{}", i).into_bytes();
+        tree.put(&key, &value).unwrap();
+    }
+
+    // Get the branch page ID
+    let store = tree.store();
+    let root_page_id = tree.root_page_id();
+    let root_page_bytes = store.get_page_bytes(root_page_id).unwrap();
+    let root_page = LeafPage::deserialize(&root_page_bytes);
+    let branch_page_id = root_page.next_page_id();
+    assert!(branch_page_id > 0, "Expected a branch page to be created");
+    
+    // Verify we can read the branch page
+    let branch_page_bytes = store.get_page_bytes(branch_page_id).unwrap();
+    assert!(branch_page_bytes.len() > 0);
+
+    // Release the store reference
+    let _ = store;
+
+    // Update some data
+    tree.put(b"key10", b"new_value10").unwrap();
+
+    // Get the store again to verify
+    let store = tree.store();
+
+    // Verify we can still read the branch page
+    let branch_page_bytes = store.get_page_bytes(branch_page_id).unwrap();
+    assert!(branch_page_bytes.len() > 0);
 } 
