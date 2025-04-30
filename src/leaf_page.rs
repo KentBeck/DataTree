@@ -4,6 +4,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PageType {
     LeafPage = 1,
+    BranchPage = 2,
     // Future page types will be added here
 }
 
@@ -11,6 +12,7 @@ impl PageType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             1 => Some(PageType::LeafPage),
+            2 => Some(PageType::BranchPage),
             _ => None,
         }
     }
@@ -34,20 +36,42 @@ impl Error for KeyNotFoundError {}
 
 // Metadata for each key-value pair
 #[derive(Debug, Clone, Copy)]
-struct KeyValueMeta {
-    key: u64,
-    offset: usize,
-    length: usize,
+pub struct KeyValueMeta {
+    pub key_offset: usize,
+    pub key_length: usize,
+    pub value_offset: usize,
+    pub value_length: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BranchEntry {
+    pub page_id: u64,
+    pub first_key: u64,
+}
+
+impl BranchEntry {
+    fn serialize(&self) -> [u8; 16] {
+        let mut bytes = [0u8; 16];
+        bytes[0..8].copy_from_slice(&self.page_id.to_le_bytes());
+        bytes[8..16].copy_from_slice(&self.first_key.to_le_bytes());
+        bytes
+    }
+
+    fn deserialize(bytes: &[u8]) -> Self {
+        let page_id = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        let first_key = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+        BranchEntry { page_id, first_key }
+    }
 }
 
 #[derive(Debug)]
 pub struct LeafPage {
-    page_type: PageType,
-    page_size: usize,
-    metadata: Vec<KeyValueMeta>,
-    data: Vec<u8>,
-    prev_page_id: u64,
-    next_page_id: u64,
+    pub page_type: PageType,
+    pub page_size: usize,
+    pub metadata: Vec<KeyValueMeta>,
+    pub data: Vec<u8>,
+    pub prev_page_id: u64,
+    pub next_page_id: u64,
 }
 
 impl LeafPage {
@@ -71,8 +95,13 @@ impl LeafPage {
         // Write metadata count (8 bytes)
         bytes.extend_from_slice(&(self.metadata.len() as u64).to_le_bytes());
         
+        // Calculate data start offset
+        let header_size = 1 + 8 + 8 + 8 + 8 + 8; // page_type + count + data_start + used_bytes + prev_page_id + next_page_id
+        let metadata_size = self.metadata.len() * 16; // 8 bytes for key_length + 8 bytes for value_length
+        let data_start = header_size + metadata_size;
+        
         // Write data start offset (8 bytes)
-        bytes.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(data_start as u64).to_le_bytes());
         
         // Write used bytes (8 bytes)
         bytes.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
@@ -85,9 +114,8 @@ impl LeafPage {
         
         // Write metadata entries
         for meta in &self.metadata {
-            bytes.extend_from_slice(&meta.key.to_le_bytes());
-            bytes.extend_from_slice(&meta.offset.to_le_bytes());
-            bytes.extend_from_slice(&meta.length.to_le_bytes());
+            bytes.extend_from_slice(&(meta.key_length as u64).to_le_bytes());
+            bytes.extend_from_slice(&(meta.value_length as u64).to_le_bytes());
         }
         
         // Write data
@@ -125,18 +153,23 @@ impl LeafPage {
         
         // Read metadata entries
         let mut metadata = Vec::with_capacity(count as usize);
+        let mut current_offset = 0;
         for _ in 0..count {
-            let key = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+            let key_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
             offset += 8;
-            let meta_offset = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+            let value_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
             offset += 8;
-            let length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
-            offset += 8;
-            metadata.push(KeyValueMeta { key, offset: meta_offset, length });
+            metadata.push(KeyValueMeta {
+                key_offset: current_offset,
+                key_length,
+                value_offset: current_offset + key_length,
+                value_length,
+            });
+            current_offset += key_length + value_length;
         }
         
         // Read data
-        let data = bytes[offset..offset + used_bytes as usize].to_vec();
+        let data = bytes[data_start as usize..data_start as usize + used_bytes as usize].to_vec();
         
         LeafPage {
             page_type,
@@ -146,6 +179,18 @@ impl LeafPage {
             prev_page_id,
             next_page_id,
         }
+    }
+
+    pub fn page_type(&self) -> PageType {
+        self.page_type
+    }
+
+    pub fn metadata(&self) -> &[KeyValueMeta] {
+        &self.metadata
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 
     pub fn prev_page_id(&self) -> u64 {
@@ -164,146 +209,99 @@ impl LeafPage {
         self.next_page_id = page_id;
     }
 
-    pub fn get(&self, key: u64) -> Result<&[u8], KeyNotFoundError> {
+    pub fn get(&self, key: &[u8]) -> Option<&[u8]> {
         // Find the metadata for the key
-        let meta = self.metadata.iter()
-            .find(|m| m.key == key)
-            .ok_or(KeyNotFoundError)?;
-
-        // Return the slice of data
-        Ok(&self.data[meta.offset..meta.offset + meta.length])
-    }
-
-    // Helper method to calculate metadata size
-    fn metadata_size(&self, is_update: bool) -> usize {
-        let entries = if is_update {
-            self.metadata.len()
-        } else {
-            self.metadata.len() + 1
-        };
-        entries * std::mem::size_of::<KeyValueMeta>()
-    }
-
-    // Helper method to calculate total space needed
-    fn total_space_needed(&self, key: u64, data_size: usize, is_update: bool) -> usize {
-        let metadata_size = self.metadata_size(is_update);
-        let data_size = if is_update {
-            // For updates, we only count the additional space needed
-            if let Some(existing_meta) = self.metadata.iter().find(|m| m.key == key) {
-                if data_size <= existing_meta.length {
-                    self.data.len() // No additional space needed
-                } else {
-                    self.data.len() + (data_size - existing_meta.length)
-                }
-            } else {
-                self.data.len() + data_size
+        for meta in &self.metadata {
+            let meta_key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
+            if meta_key == key {
+                return Some(&self.data[meta.value_offset..meta.value_offset + meta.value_length]);
             }
-        } else {
-            self.data.len() + data_size
-        };
-
-        metadata_size + data_size
+        }
+        None
     }
 
-    // Helper method to check if we can add more data
-    fn can_add(&self, key: u64, data_size: usize, is_update: bool) -> bool {
-        self.total_space_needed(key, data_size, is_update) <= self.page_size
-    }
-
-    // Method to add data
-    pub fn insert(&mut self, key: u64, value: &[u8]) -> Result<(), &'static str> {
+    pub fn insert(&mut self, key: &[u8], value: &[u8]) -> bool {
         // Check if key already exists
-        if let Some(index) = self.metadata.iter().position(|m| m.key == key) {
-            // This is an update
-            let old_meta = self.metadata[index];
-            
-            // Check if we have enough space (considering we'll reuse the old space)
-            if value.len() <= old_meta.length {
-                // We can use the existing space
-                self.data[old_meta.offset..old_meta.offset + value.len()]
-                    .copy_from_slice(value);
-                self.metadata[index].length = value.len();
-                return Ok(());
+        if let Some(pos) = self.metadata.iter().position(|meta| {
+            let meta_key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
+            meta_key == key
+        }) {
+            // Key exists, update the value
+            let old_meta = self.metadata[pos];
+            let required_space = if value.len() > old_meta.value_length {
+                // Only count the additional space needed
+                value.len() - old_meta.value_length
+            } else {
+                0 // No additional space needed if new value is smaller
+            };
+
+            // Calculate total space after update
+            let total_space = self.data.len() + required_space;
+
+            // Check if we have enough space
+            if total_space > self.page_size {
+                return false; // Not enough space
             }
 
-            // Calculate space needed for the new value
-            if !self.can_add(key, value.len(), true) {
-                return Err("Page is full");
-            }
-
-            // Remove old metadata and compact data if necessary
-            self.metadata.remove(index);
+            // Remove old data and metadata
+            self.metadata.remove(pos);
             self.compact_data();
-        } else {
-            // This is a new insert
-            if !self.can_add(key, value.len(), false) {
-                return Err("Page is full");
-            }
+
+            // Add new data and metadata
+            let new_meta = KeyValueMeta {
+                key_offset: self.data.len(),
+                key_length: key.len(),
+                value_offset: self.data.len() + key.len(),
+                value_length: value.len(),
+            };
+
+            self.data.extend_from_slice(key);
+            self.data.extend_from_slice(value);
+            self.metadata.push(new_meta);
+
+            return true;
         }
 
-        // Calculate new metadata size
-        let new_metadata_size = self.metadata_size(false);
-        
-        // If we need to move data to make room for new metadata
-        if new_metadata_size > self.data.len() {
-            // Move all data to the new position
-            let data_to_move = self.data.len();
-            let new_data_start = new_metadata_size;
-            self.data.copy_within(0..data_to_move, new_data_start);
+        // Calculate total space needed for new entry
+        let required_space = key.len() + value.len();
+        let metadata_size = (self.metadata.len() + 1) * 16; // 8 bytes for key_length + 8 bytes for value_length
+        let header_size = 1 + 8 + 8 + 8 + 8 + 8; // page_type + count + data_start + used_bytes + prev_page_id + next_page_id
+        let total_space = self.data.len() + required_space + metadata_size + header_size;
+
+        // Check if we have enough space
+        if total_space > self.page_size {
+            return false; // Not enough space
         }
 
-        // Store the metadata
-        let meta = KeyValueMeta {
-            key,
-            offset: self.data.len(),
-            length: value.len(),
+        // Create new metadata
+        let new_meta = KeyValueMeta {
+            key_offset: self.data.len(),
+            key_length: key.len(),
+            value_offset: self.data.len() + key.len(),
+            value_length: value.len(),
         };
-        self.metadata.push(meta);
 
-        // Copy the data into the page
-        let start = self.data.len();
+        // Add the new data
+        self.data.extend_from_slice(key);
         self.data.extend_from_slice(value);
 
-        Ok(())
+        // Add the new metadata
+        self.metadata.push(new_meta);
+
+        true
     }
 
-    // Helper method to compact data after removing entries
-    fn compact_data(&mut self) {
-        if self.metadata.is_empty() {
-            self.data.clear();
-            return;
-        }
-
-        // Sort metadata by offset
-        self.metadata.sort_by_key(|m| m.offset);
-
-        // Update data_start
-        let data_start = self.metadata_size(true);
-
-        // Compact data
-        let mut new_offset = data_start;
-        for meta in self.metadata.iter_mut() {
-            if meta.offset != new_offset {
-                // Move data to new position
-                self.data.copy_within(
-                    meta.offset..meta.offset + meta.length,
-                    new_offset
-                );
-                meta.offset = new_offset;
-            }
-            new_offset += meta.length;
-        }
-        self.data.truncate(new_offset - data_start);
-    }
-
-    // Method to remove a key-value pair
-    pub fn delete(&mut self, key: u64) -> Result<(), KeyNotFoundError> {
-        if let Some(index) = self.metadata.iter().position(|m| m.key == key) {
-            self.metadata.remove(index);
+    pub fn delete(&mut self, key: &[u8]) -> bool {
+        // Find and remove the metadata
+        if let Some(pos) = self.metadata.iter().position(|meta| {
+            let meta_key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
+            meta_key == key
+        }) {
+            self.metadata.remove(pos);
             self.compact_data();
-            Ok(())
+            true
         } else {
-            Err(KeyNotFoundError)
+            false
         }
     }
 
@@ -323,40 +321,272 @@ impl LeafPage {
         current_metadata_size + current_data_size + new_metadata_size + new_data_size + header_size > self.page_size
     }
 
-    pub fn split(&mut self) -> (LeafPage, Vec<u8>) {
-        // Create new page with same size
-        let mut new_page = LeafPage::new(self.page_size);
-        
+    pub fn split(&mut self) -> Option<LeafPage> {
+        if self.metadata.len() < 2 {
+            return None;
+        }
+
         // Sort metadata by key for consistent splitting
-        self.metadata.sort_by_key(|m| m.key);
-        
-        // Split metadata in half
+        self.metadata.sort_by(|a, b| {
+            let a_key = &self.data[a.key_offset..a.key_offset + a.key_length];
+            let b_key = &self.data[b.key_offset..b.key_offset + b.key_length];
+            a_key.cmp(b_key)
+        });
+
+        // Calculate split point
         let split_point = self.metadata.len() / 2;
-        let new_metadata = self.metadata.split_off(split_point);
-        
-        // Calculate new data start for both pages
-        let mut current_data_start = 0;
-        let mut new_data_start = 0;
-        
-        // Update metadata and data for both pages
-        for meta in &mut self.metadata {
-            let data = &self.data[meta.offset..meta.offset + meta.length];
-            meta.offset = current_data_start;
-            current_data_start += meta.length;
+
+        // Create new page with same size
+        let mut new_page = LeafPage::new_with_size(self.page_size);
+        new_page.page_type = PageType::LeafPage;
+
+        // First pass: collect all data
+        let mut all_data = Vec::new();
+        for meta in &self.metadata {
+            let key = self.data[meta.key_offset..meta.key_offset + meta.key_length].to_vec();
+            let value = self.data[meta.value_offset..meta.value_offset + meta.value_length].to_vec();
+            all_data.push((key, value));
         }
-        
-        for meta in &new_metadata {
-            let data = &self.data[meta.offset..meta.offset + meta.length];
-            meta.offset = new_data_start;
-            new_data_start += meta.length;
+
+        // Clear current data and metadata
+        self.data.clear();
+        self.metadata.clear();
+        let mut new_data = Vec::new();
+        let mut new_metadata = Vec::new();
+
+        // Second pass: split data
+        for (i, (key, value)) in all_data.into_iter().enumerate() {
+            if i < split_point {
+                // Keep in current page
+                let new_meta = KeyValueMeta {
+                    key_offset: self.data.len(),
+                    key_length: key.len(),
+                    value_offset: self.data.len() + key.len(),
+                    value_length: value.len(),
+                };
+                self.data.extend_from_slice(&key);
+                self.data.extend_from_slice(&value);
+                self.metadata.push(new_meta);
+            } else {
+                // Move to new page
+                let new_meta = KeyValueMeta {
+                    key_offset: new_data.len(),
+                    key_length: key.len(),
+                    value_offset: new_data.len() + key.len(),
+                    value_length: value.len(),
+                };
+                new_data.extend_from_slice(&key);
+                new_data.extend_from_slice(&value);
+                new_metadata.push(new_meta);
+            }
         }
-        
-        // Set metadata and data for new page
+
+        // Update metadata
+        new_page.data = new_data;
         new_page.metadata = new_metadata;
-        new_page.data = self.data.clone();
+
+        Some(new_page)
+    }
+
+    pub fn new_with_size(page_size: usize) -> Self {
+        LeafPage {
+            page_type: PageType::LeafPage,
+            data: Vec::new(),
+            metadata: Vec::new(),
+            page_size,
+            prev_page_id: 0,
+            next_page_id: 0,
+        }
+    }
+
+    fn compact_data(&mut self) {
+        if self.metadata.is_empty() {
+            self.data.clear();
+            return;
+        }
+
+        // Sort metadata by key_offset
+        self.metadata.sort_by_key(|m| m.key_offset);
+
+        // Rebuild data
+        let mut new_data = Vec::new();
+        let mut new_metadata = Vec::new();
+
+        for meta in &self.metadata {
+            let key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
+            let value = &self.data[meta.value_offset..meta.value_offset + meta.value_length];
+
+            let new_meta = KeyValueMeta {
+                key_offset: new_data.len(),
+                key_length: meta.key_length,
+                value_offset: new_data.len() + meta.key_length,
+                value_length: meta.value_length,
+            };
+
+            new_data.extend_from_slice(key);
+            new_data.extend_from_slice(value);
+            new_metadata.push(new_meta);
+        }
+
+        self.data = new_data;
+        self.metadata = new_metadata;
+    }
+
+    pub fn max_value_size(&self) -> usize {
+        // Reserve space for metadata and key
+        let metadata_overhead = 32; // 16 bytes for metadata entry + buffer
+        let key_overhead = 32; // Reasonable buffer for key size
+        self.page_size - metadata_overhead - key_overhead
+    }
+
+    pub fn is_value_too_large(&self, value: &[u8]) -> bool {
+        value.len() > self.max_value_size()
+    }
+
+    pub fn get_value_chunk_size(&self) -> usize {
+        self.max_value_size()
+    }
+}
+
+#[derive(Debug)]
+pub struct BranchPage {
+    pub page_type: PageType,
+    pub page_size: usize,
+    pub entries: Vec<BranchEntry>,
+    pub prev_page_id: u64,
+    pub next_page_id: u64,
+}
+
+impl BranchPage {
+    pub fn new(page_size: usize) -> Self {
+        BranchPage {
+            page_type: PageType::BranchPage,
+            page_size,
+            entries: Vec::new(),
+            prev_page_id: 0,
+            next_page_id: 0,
+        }
+    }
+
+    pub fn insert(&mut self, page_id: u64, first_key: u64) -> bool {
+        let entry = BranchEntry { page_id, first_key };
         
-        // Return the new page and the key that split the pages
-        let split_key = self.metadata.last().unwrap().key;
-        (new_page, split_key.to_vec())
+        // Find insertion point to maintain sorted order
+        let pos = self.entries.binary_search_by_key(&first_key, |e| e.first_key)
+            .unwrap_or_else(|pos| pos);
+        
+        self.entries.insert(pos, entry);
+        true
+    }
+
+    pub fn find_page_id(&self, key: u64) -> Option<u64> {
+        if self.entries.is_empty() {
+            return None;
+        }
+
+        // If key is less than first entry's key, return first page
+        if key < self.entries[0].first_key {
+            return Some(self.entries[0].page_id);
+        }
+
+        // Find the entry whose range contains this key
+        for i in 0..self.entries.len() {
+            let current_key = self.entries[i].first_key;
+            let next_key = if i + 1 < self.entries.len() {
+                self.entries[i + 1].first_key
+            } else {
+                u64::MAX
+            };
+
+            if key >= current_key && key < next_key {
+                return Some(self.entries[i].page_id);
+            }
+        }
+
+        // If we get here, the key is in the last page
+        Some(self.entries.last().unwrap().page_id)
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.page_size);
+        
+        // Write page type (1 byte)
+        bytes.push(self.page_type.to_u8());
+        
+        // Write number of entries (8 bytes)
+        bytes.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
+        
+        // Write prev_page_id (8 bytes)
+        bytes.extend_from_slice(&self.prev_page_id.to_le_bytes());
+        
+        // Write next_page_id (8 bytes)
+        bytes.extend_from_slice(&self.next_page_id.to_le_bytes());
+        
+        // Write entries
+        for entry in &self.entries {
+            bytes.extend_from_slice(&entry.serialize());
+        }
+        
+        bytes
+    }
+
+    pub fn deserialize(bytes: &[u8]) -> Self {
+        let mut offset = 0;
+        
+        // Read page type (1 byte)
+        let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::BranchPage);
+        offset += 1;
+        
+        // Read number of entries (8 bytes)
+        let count = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
+        
+        // Read prev_page_id (8 bytes)
+        let prev_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
+        
+        // Read next_page_id (8 bytes)
+        let next_page_id = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        offset += 8;
+        
+        // Read entries
+        let mut entries = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let entry_bytes = &bytes[offset..offset + 16];
+            entries.push(BranchEntry::deserialize(entry_bytes));
+            offset += 16;
+        }
+        
+        BranchPage {
+            page_type,
+            page_size: bytes.len(),
+            entries,
+            prev_page_id,
+            next_page_id,
+        }
+    }
+
+    pub fn page_type(&self) -> PageType {
+        self.page_type
+    }
+
+    pub fn entries(&self) -> &[BranchEntry] {
+        &self.entries
+    }
+
+    pub fn prev_page_id(&self) -> u64 {
+        self.prev_page_id
+    }
+
+    pub fn next_page_id(&self) -> u64 {
+        self.next_page_id
+    }
+
+    pub fn set_prev_page_id(&mut self, page_id: u64) {
+        self.prev_page_id = page_id;
+    }
+
+    pub fn set_next_page_id(&mut self, page_id: u64) {
+        self.next_page_id = page_id;
     }
 } 

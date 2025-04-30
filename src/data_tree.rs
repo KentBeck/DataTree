@@ -1,7 +1,6 @@
-use std::error::Error;
 use std::collections::HashSet;
+use std::error::Error;
 use crate::leaf_page::LeafPage;
-use crate::leaf_page::KeyNotFoundError;
 use crate::page_store::PageStore;
 
 pub struct DataTree<S: PageStore> {
@@ -11,8 +10,10 @@ pub struct DataTree<S: PageStore> {
 }
 
 impl<S: PageStore> DataTree<S> {
-    pub fn new(store: S) -> Self {
+    pub fn new(mut store: S) -> Self {
         let root_page_id = store.allocate_page();
+        let root_page = LeafPage::new(store.page_size());
+        store.put_page_bytes(root_page_id, &root_page.serialize()).unwrap();
         DataTree {
             store,
             root_page_id,
@@ -22,17 +23,14 @@ impl<S: PageStore> DataTree<S> {
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
         let mut current_page_id = self.root_page_id;
-        
         loop {
-            let page_bytes = self.store.get_page_bytes(current_page_id)
-                .ok_or("Page not found")?;
+            let page_bytes = self.store.get_page_bytes(current_page_id)?;
             let page = LeafPage::deserialize(&page_bytes);
             
             if let Some(value) = page.get(key) {
                 return Ok(Some(value.to_vec()));
             }
             
-            // Try next page if exists
             if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
                 current_page_id = next_page_id;
             } else {
@@ -42,111 +40,134 @@ impl<S: PageStore> DataTree<S> {
     }
 
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), Box<dyn Error>> {
+        // Check if value is too large for a page
+        let page = LeafPage::new(self.store.page_size());
+        if page.is_value_too_large(value) {
+            return Err("Value too large for page size".into());
+        }
+
         let mut current_page_id = self.root_page_id;
-        
         loop {
-            let page_bytes = self.store.get_page_bytes(current_page_id)
-                .ok_or("Page not found")?;
+            let page_bytes = self.store.get_page_bytes(current_page_id)?;
             let mut page = LeafPage::deserialize(&page_bytes);
             
-            // Check if page is full
-            if page.is_full(key, value) {
-                // Split the page
-                let (mut new_page, split_key) = page.split();
-                
-                // Create new page in store
-                let new_page_id = self.store.allocate_page();
-                
-                // Link the pages
-                self.store.link_pages(current_page_id, new_page_id)?;
-                
-                // Save both pages
-                self.store.put_page_bytes(current_page_id, &page.serialize());
-                self.store.put_page_bytes(new_page_id, &new_page.serialize());
-                
-                // Continue with the appropriate page based on key
-                if key < &split_key {
-                    current_page_id = current_page_id;
-                } else {
-                    current_page_id = new_page_id;
-                }
-                
-                // Try inserting again
-                continue;
-            }
-            
-            // Try to insert into current page
             if page.insert(key, value) {
-                self.store.put_page_bytes(current_page_id, &page.serialize());
+                self.store.put_page_bytes(current_page_id, &page.serialize())?;
+                self.dirty_pages.insert(current_page_id);
                 return Ok(());
             }
             
-            // If current page is full, try next page
+            // Try to split the page if it's full
+            if let Some(mut new_page) = page.split() {
+                // Create new page
+                let new_page_id = self.store.allocate_page();
+                
+                // Update links
+                let next_page_id = page.next_page_id();
+                new_page.set_prev_page_id(current_page_id);
+                new_page.set_next_page_id(next_page_id);
+                
+                // Save the new page
+                self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
+                self.dirty_pages.insert(new_page_id);
+                
+                // Update current page's next pointer
+                page.set_next_page_id(new_page_id);
+                self.store.put_page_bytes(current_page_id, &page.serialize())?;
+                self.dirty_pages.insert(current_page_id);
+                
+                // Update next page's prev pointer if it exists
+                if next_page_id != 0 {
+                    let next_bytes = self.store.get_page_bytes(next_page_id)?;
+                    let mut next_page = LeafPage::deserialize(&next_bytes);
+                    next_page.set_prev_page_id(new_page_id);
+                    self.store.put_page_bytes(next_page_id, &next_page.serialize())?;
+                    self.dirty_pages.insert(next_page_id);
+                }
+                
+                // Try to insert into the current page again
+                if page.insert(key, value) {
+                    self.store.put_page_bytes(current_page_id, &page.serialize())?;
+                    self.dirty_pages.insert(current_page_id);
+                    return Ok(());
+                }
+                
+                // If it doesn't fit in the current page, try the new page
+                if new_page.insert(key, value) {
+                    self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
+                    self.dirty_pages.insert(new_page_id);
+                    return Ok(());
+                }
+            }
+            
             if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
                 current_page_id = next_page_id;
             } else {
-                // Create new page and link it
+                // Create new page
                 let new_page_id = self.store.allocate_page();
+                let mut new_page = LeafPage::new(self.store.page_size());
+                if !new_page.insert(key, value) {
+                    return Err("Value too large for page size".into());
+                }
+                self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
                 self.store.link_pages(current_page_id, new_page_id)?;
-                
-                let mut new_page = LeafPage::deserialize(&self.store.get_page_bytes(new_page_id)
-                    .ok_or("New page not found")?);
-                new_page.insert(key, value);
-                self.store.put_page_bytes(new_page_id, &new_page.serialize());
+                self.dirty_pages.insert(new_page_id);
                 return Ok(());
             }
         }
     }
 
-    pub fn delete(&mut self, key: &[u8]) -> Result<(), Box<dyn Error>> {
+    pub fn delete(&mut self, key: &[u8]) -> Result<bool, Box<dyn Error>> {
         let mut current_page_id = self.root_page_id;
-        let mut prev_page_id = None;
-        
         loop {
-            let page_bytes = self.store.get_page_bytes(current_page_id)
-                .ok_or("Page not found")?;
+            let page_bytes = self.store.get_page_bytes(current_page_id)?;
             let mut page = LeafPage::deserialize(&page_bytes);
             
             if page.delete(key) {
-                // If the page is now empty and it's not the root page, remove it
-                if page.metadata.is_empty() && current_page_id != self.root_page_id {
-                    // Link the previous and next pages together
-                    if let Some(prev_id) = prev_page_id {
-                        if let Some(next_id) = self.store.get_next_page_id(current_page_id) {
-                            self.store.link_pages(prev_id, next_id)?;
-                        } else {
-                            // If no next page, just update prev page's next pointer
-                            let mut prev_page = LeafPage::deserialize(&self.store.get_page_bytes(prev_id)
-                                .ok_or("Previous page not found")?);
-                            prev_page.set_next_page_id(0);
-                            self.store.put_page_bytes(prev_id, &prev_page.serialize());
-                        }
+                self.store.put_page_bytes(current_page_id, &page.serialize())?;
+                self.dirty_pages.insert(current_page_id);
+                
+                // Check if page is empty and not root
+                if page.metadata().is_empty() && current_page_id != self.root_page_id {
+                    // Get previous and next page IDs
+                    let prev_page_id = page.prev_page_id();
+                    let next_page_id = page.next_page_id();
+                    
+                    // Update links
+                    if prev_page_id != 0 {
+                        let prev_bytes = self.store.get_page_bytes(prev_page_id)?;
+                        let mut prev_page = LeafPage::deserialize(&prev_bytes);
+                        prev_page.set_next_page_id(next_page_id);
+                        self.store.put_page_bytes(prev_page_id, &prev_page.serialize())?;
+                        self.dirty_pages.insert(prev_page_id);
+                    }
+                    
+                    if next_page_id != 0 {
+                        let next_bytes = self.store.get_page_bytes(next_page_id)?;
+                        let mut next_page = LeafPage::deserialize(&next_bytes);
+                        next_page.set_prev_page_id(prev_page_id);
+                        self.store.put_page_bytes(next_page_id, &next_page.serialize())?;
+                        self.dirty_pages.insert(next_page_id);
                     }
                     
                     // Free the empty page
                     self.store.free_page(current_page_id)?;
-                } else {
-                    // Save the page if it's not empty or is the root page
-                    self.store.put_page_bytes(current_page_id, &page.serialize());
+                    self.dirty_pages.remove(&current_page_id);
                 }
-                return Ok(());
+                
+                return Ok(true);
             }
             
-            // Try next page if exists
             if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
-                prev_page_id = Some(current_page_id);
                 current_page_id = next_page_id;
             } else {
-                return Ok(());
+                return Ok(false);
             }
         }
     }
 
     pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
-        if !self.dirty_pages.is_empty() {
-            self.store.flush()?;
-            self.dirty_pages.clear();
-        }
+        self.dirty_pages.clear();
         Ok(())
     }
 
@@ -155,13 +176,15 @@ impl<S: PageStore> DataTree<S> {
         &self.dirty_pages
     }
 
-    #[cfg(test)]
-    pub(crate) fn store(&mut self) -> &mut S {
-        &mut self.store
+    pub fn root_page_id(&self) -> u64 {
+        self.root_page_id
     }
 
-    #[cfg(test)]
-    pub(crate) fn root_page_id(&self) -> u64 {
-        self.root_page_id
+    pub fn store(&self) -> &S {
+        &self.store
+    }
+
+    pub fn store_mut(&mut self) -> &mut S {
+        &mut self.store
     }
 } 
