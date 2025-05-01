@@ -34,9 +34,9 @@ fn test_leaf_page_with_single_entry() {
     let mut leaf_page = LeafPage::new(page_size);
 
     // Add a key-value pair
-    let key = b"test_key";
+    let key = 3001u64.to_le_bytes();
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.insert(&key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -58,7 +58,7 @@ fn test_leaf_page_with_single_entry() {
     assert_eq!(deserialized.next_page_id, 0);
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(key).unwrap();
+    let retrieved_value = deserialized.get(&key).unwrap();
     assert_eq!(retrieved_value, value);
 }
 
@@ -70,13 +70,13 @@ fn test_leaf_page_with_multiple_entries() {
 
     // Add several key-value pairs
     let entries = vec![
-        (b"key1", b"value1"),
-        (b"key2", b"value2"),
-        (b"key3", b"value3"),
+        (3101u64.to_le_bytes(), b"value1"),
+        (3102u64.to_le_bytes(), b"value2"),
+        (3103u64.to_le_bytes(), b"value3"),
     ];
 
-    for &(key, value) in &entries {
-        assert!(leaf_page.insert(key, value));
+    for (key, value) in &entries {
+        assert!(leaf_page.insert(key, *value));
     }
 
     // Serialize the page
@@ -99,9 +99,9 @@ fn test_leaf_page_with_multiple_entries() {
     assert_eq!(deserialized.next_page_id, 0);
 
     // Check that all key-value pairs can be retrieved
-    for &(key, value) in &entries {
+    for (key, value) in &entries {
         let retrieved_value = deserialized.get(key).unwrap();
-        assert_eq!(retrieved_value, value);
+        assert_eq!(retrieved_value, *value);
     }
 }
 
@@ -118,9 +118,9 @@ fn test_leaf_page_with_linked_pages() {
     leaf_page.set_next_page_id(next_page_id);
 
     // Add a key-value pair
-    let key = b"test_key";
+    let key = 3201u64.to_le_bytes();
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.insert(&key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -142,7 +142,7 @@ fn test_leaf_page_with_linked_pages() {
     assert_eq!(deserialized.next_page_id, next_page_id);
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(key).unwrap();
+    let retrieved_value = deserialized.get(&key).unwrap();
     assert_eq!(retrieved_value, value);
 }
 
@@ -153,9 +153,9 @@ fn test_leaf_page_serialization_format() {
     let mut leaf_page = LeafPage::new(page_size);
 
     // Add a key-value pair
-    let key = b"test_key";
+    let key = 3301u64.to_le_bytes();
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.insert(&key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -218,11 +218,11 @@ fn test_leaf_page_with_large_data() {
     let mut leaf_page = LeafPage::new(page_size);
 
     // Create a large value (but still small enough to fit in the page)
-    let key = b"large_key";
+    let key = 3401u64.to_le_bytes();
     let value = vec![b'x'; 500]; // 500 bytes of 'x'
 
     // Insert the large value
-    assert!(leaf_page.insert(key, &value));
+    assert!(leaf_page.insert(&key, &value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -242,7 +242,7 @@ fn test_leaf_page_with_large_data() {
     assert!(deserialized.data.len() >= value.len());
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(key).unwrap();
+    let retrieved_value = deserialized.get(&key).unwrap();
     assert_eq!(retrieved_value, value);
 }
 
@@ -266,13 +266,13 @@ fn test_leaf_page_with_max_data() {
     let max_data_size = page_size - overhead;
 
     // Create a key and value that will fill the page
-    let key = b"max_key";
+    let key = 3501u64.to_le_bytes();
     let key_len = key.len();
     let value_len = max_data_size - key_len;
     let value = vec![b'y'; value_len]; // Fill the rest of the page with 'y'
 
     // Insert the large value
-    assert!(leaf_page.insert(key, &value));
+    assert!(leaf_page.insert(&key, &value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -291,6 +291,6 @@ fn test_leaf_page_with_max_data() {
     assert_eq!(deserialized.metadata.len(), 1);
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(key).unwrap();
+    let retrieved_value = deserialized.get(&key).unwrap();
     assert_eq!(retrieved_value, value);
 }
