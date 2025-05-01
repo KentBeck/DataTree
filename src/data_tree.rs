@@ -105,40 +105,47 @@ impl<S: PageStore> DataTree<S> {
         // Check the page type
         let page_type = PageType::from_u8(root_page_bytes[0]).unwrap_or(PageType::LeafPage);
 
-        if page_type == PageType::BranchPage {
-            // It's a branch page, find the appropriate leaf page
-            let branch_page = BranchPage::deserialize(&root_page_bytes);
-
-            // Find the leaf page ID using the branch page
-            if let Some(leaf_page_id) = branch_page.find_page_id(key) {
-                // Now get the leaf page
-                let leaf_page_bytes = self.store.get_page_bytes(leaf_page_id)?;
-                let leaf_page = LeafPage::deserialize(&leaf_page_bytes);
-
-                // Look for the key in the leaf page
-                if let Some(value) = leaf_page.get(key) {
-                    return Ok(Some(value.to_vec()));
-                }
-
-                // Check if there are more leaf pages to search
-                let mut current_page_id = leaf_page_id;
-                while let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
-                    current_page_id = next_page_id;
-                    let page_bytes = self.store.get_page_bytes(current_page_id)?;
-                    let page = LeafPage::deserialize(&page_bytes);
-
-                    if let Some(value) = page.get(key) {
-                        return Ok(Some(value.to_vec()));
-                    }
-                }
-            }
-
-            // Key not found
-            return Ok(None);
-        } else {
+        // Guard clause: ensure root page is a BranchPage
+        if page_type != PageType::BranchPage {
             // Root is not a BranchPage, which is unexpected
             return Err("Root page is not a BranchPage".into());
         }
+
+        // It's a branch page, find the appropriate leaf page
+        let branch_page = BranchPage::deserialize(&root_page_bytes);
+
+        // Find the leaf page ID using the branch page
+        let leaf_page_id = match branch_page.find_page_id(key) {
+            Some(id) => id,
+            None => {
+                // Key not found in branch page
+                return Ok(None);
+            }
+        };
+
+        // Now get the leaf page
+        let leaf_page_bytes = self.store.get_page_bytes(leaf_page_id)?;
+        let leaf_page = LeafPage::deserialize(&leaf_page_bytes);
+
+        // Look for the key in the leaf page
+        if let Some(value) = leaf_page.get(key) {
+            return Ok(Some(value.to_vec()));
+        }
+
+        // Check if there are more leaf pages to search
+        let mut current_page_id = leaf_page_id;
+        while let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
+            current_page_id = next_page_id;
+            let page_bytes = self.store.get_page_bytes(current_page_id)?;
+            let page = LeafPage::deserialize(&page_bytes);
+
+            if let Some(value) = page.get(key) {
+                return Ok(Some(value.to_vec()));
+            }
+        }
+
+        // Key not found in any leaf page
+        Ok(None)
     }
 
 
