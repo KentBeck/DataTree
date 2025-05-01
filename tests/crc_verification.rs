@@ -9,19 +9,19 @@ fn test_crc_verification() {
     let mut tree = DataTree::new(store);
 
     // Insert a key-value pair
-    let key = b"test_key";
+    let key = 2001;
     let value = b"test_value";
-    tree.put(key, value).unwrap();
+    tree.put_u64(key, value).unwrap();
 
     // Get the value to verify it was stored correctly
-    let retrieved_value = tree.get(key).unwrap().unwrap();
+    let retrieved_value = tree.get_u64(key).unwrap().unwrap();
     assert_eq!(retrieved_value, value);
 
     // Instead of using a custom PageStore, let's directly test the CRC functionality
     // by creating a corrupted page and trying to deserialize it
 
     // Get the page bytes
-    let page_bytes = tree.get(key).unwrap().unwrap();
+    let page_bytes = tree.get_u64(key).unwrap().unwrap();
 
     // Create a corrupted copy of the page bytes
     let mut corrupted_bytes = page_bytes.clone();
@@ -35,7 +35,8 @@ fn test_crc_verification() {
 
     // Create a corrupted LeafPage
     let mut corrupted_page = LeafPage::new(1024);
-    corrupted_page.insert(key, &corrupted_bytes);
+    let key_bytes = key.to_le_bytes();
+    corrupted_page.insert(&key_bytes, &corrupted_bytes);
 
     // Save the corrupted page
     corrupted_store.put_page_bytes(corrupted_page_id, &corrupted_page.serialize()).unwrap();
@@ -45,7 +46,7 @@ fn test_crc_verification() {
 
     // Try to get the value from the corrupted tree
     // This should not fail because we're not actually corrupting the CRC
-    let result = corrupted_tree.get(key);
+    let result = corrupted_tree.get_u64(key);
     assert!(result.is_ok());
 }
 
@@ -55,8 +56,10 @@ fn test_crc_verification_on_serialization() {
     let mut leaf_page = LeafPage::new(1024);
 
     // Add some data
-    leaf_page.insert(b"key1", b"value1");
-    leaf_page.insert(b"key2", b"value2");
+    let key1 = 2101u64.to_le_bytes();
+    let key2 = 2102u64.to_le_bytes();
+    leaf_page.insert(&key1, b"value1");
+    leaf_page.insert(&key2, b"value2");
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -71,8 +74,8 @@ fn test_crc_verification_on_serialization() {
 
     // Deserialize and verify the content
     let deserialized = LeafPage::deserialize(&retrieved);
-    assert_eq!(deserialized.get(b"key1").unwrap(), b"value1");
-    assert_eq!(deserialized.get(b"key2").unwrap(), b"value2");
+    assert_eq!(deserialized.get(&key1).unwrap(), b"value1");
+    assert_eq!(deserialized.get(&key2).unwrap(), b"value2");
 
     // Let's directly test the CRC functionality in InMemoryPageStore
 
