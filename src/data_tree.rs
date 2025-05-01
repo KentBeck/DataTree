@@ -38,12 +38,12 @@ impl<S: PageStore> DataTree<S> {
     pub fn new(mut store: S) -> Self {
         // Allocate a page for the leaf page
         let leaf_page_id = store.allocate_page();
-        let leaf_page = LeafPage::new(store.page_size());
+        let leaf_page = LeafPage::new_empty(store.page_size());
         store.put_page_bytes(leaf_page_id, &leaf_page.serialize()).unwrap();
 
         // Allocate a page for the branch page (root)
         let root_page_id = store.allocate_page();
-        let mut branch_page = BranchPage::new(store.page_size());
+        let mut branch_page = BranchPage::new_empty(store.page_size());
 
         // Add the leaf page as the first entry in the branch page
         // Use 0 as the first_key since it's an empty leaf page
@@ -153,7 +153,7 @@ impl<S: PageStore> DataTree<S> {
     /// Put a value with a u64 key
     pub fn put(&mut self, key: u64, value: &[u8]) -> Result<(), Box<dyn Error>> {
         // Check if value is too large for a page
-        let page = LeafPage::new(self.store.page_size());
+        let page = LeafPage::new_empty(self.store.page_size());
         if page.is_value_too_large(value) {
             return Err("Value too large for page size".into());
         }
@@ -202,7 +202,7 @@ impl<S: PageStore> DataTree<S> {
             } else {
                 // No next page, create a new one
                 let new_page_id = self.store.allocate_page();
-                let mut new_page = LeafPage::new(self.store.page_size());
+                let mut new_page = LeafPage::new_empty(self.store.page_size());
 
                 // Update the current page to point to the new page
                 page.set_next_page_id(new_page_id);

@@ -102,7 +102,7 @@ fn test_page_type_serialization() {
     assert_eq!(page_type, PageType::BranchPage);
 
     // Create a LeafPage and verify its serialization
-    let leaf_page = LeafPage::new(100);
+    let leaf_page = LeafPage::new_empty(100);
     let serialized = leaf_page.serialize();
     assert_eq!(serialized[0], PageType::LeafPage.to_u8());
 }

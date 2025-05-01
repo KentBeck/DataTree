@@ -31,7 +31,14 @@ pub struct BranchPage {
 }
 
 impl BranchPage {
-    pub fn new(page_size: usize) -> Self {
+    pub fn new(bytes: &[u8]) -> Self {
+        if bytes.is_empty() {
+            return Self::new_empty(bytes.len());
+        }
+        Self::deserialize(bytes)
+    }
+
+    pub fn new_empty(page_size: usize) -> Self {
         BranchPage {
             page_type: PageType::BranchPage,
             page_size,
@@ -103,7 +110,20 @@ impl BranchPage {
         bytes
     }
 
+    // Constants for header sizes
+    const PAGE_TYPE_SIZE: usize = 1; // 1 byte for page type
+    const COUNT_SIZE: usize = 8;     // 8 bytes for entry count
+    const PREV_PAGE_ID_SIZE: usize = 8; // 8 bytes for previous page ID
+    const NEXT_PAGE_ID_SIZE: usize = 8; // 8 bytes for next page ID
+    const HEADER_SIZE: usize = Self::PAGE_TYPE_SIZE + Self::COUNT_SIZE + Self::PREV_PAGE_ID_SIZE + Self::NEXT_PAGE_ID_SIZE;
+
     pub fn deserialize(bytes: &[u8]) -> Self {
+        // Check if the bytes array is long enough for the header
+        if bytes.len() < Self::HEADER_SIZE {
+            // Return an empty BranchPage if the bytes array is too short
+            return BranchPage::new_empty(bytes.len());
+        }
+
         let mut offset = 0;
 
         // Read page type (1 byte)
@@ -171,7 +191,7 @@ mod tests {
     #[test]
     fn test_branch_page_operations() {
         // Create a branch page
-        let mut branch_page = BranchPage::new(100);
+        let mut branch_page = BranchPage::new_empty(100);
 
         // Insert some entries
         assert!(branch_page.insert(1, 10)); // Page 1 starts with key 10
@@ -202,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_branch_page_linking() {
-        let mut branch_page = BranchPage::new(100);
+        let mut branch_page = BranchPage::new_empty(100);
 
         // Test page linking
         branch_page.set_prev_page_id(42);

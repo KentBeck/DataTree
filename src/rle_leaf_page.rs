@@ -51,7 +51,14 @@ pub struct RleLeafPage {
 }
 
 impl RleLeafPage {
-    pub fn new(page_size: usize) -> Self {
+    pub fn new(bytes: &[u8]) -> Self {
+        if bytes.is_empty() {
+            return Self::new_empty(bytes.len());
+        }
+        Self::deserialize(bytes)
+    }
+
+    pub fn new_empty(page_size: usize) -> Self {
         RleLeafPage {
             page_type: PageType::RleLeafPage,
             page_size,
@@ -110,7 +117,7 @@ impl RleLeafPage {
         // Check if the bytes array is long enough for the header
         if bytes.len() < HEADER_SIZE {
             // Return an empty RleLeafPage if the bytes array is too short
-            return RleLeafPage::new(bytes.len());
+            return RleLeafPage::new_empty(bytes.len());
         }
 
         let mut offset = 0;
@@ -576,7 +583,7 @@ impl RleLeafPage {
         let split_point = self.metadata.len() / 2;
 
         // Create new page with same size
-        let mut new_page = RleLeafPage::new(self.page_size);
+        let mut new_page = RleLeafPage::new_empty(self.page_size);
         new_page.page_type = PageType::RleLeafPage;
 
         // Move metadata entries to the new page

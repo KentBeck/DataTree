@@ -48,7 +48,14 @@ pub struct LeafPage {
 }
 
 impl LeafPage {
-    pub fn new(page_size: usize) -> Self {
+    pub fn new(bytes: &[u8]) -> Self {
+        if bytes.is_empty() {
+            return Self::new_empty(bytes.len());
+        }
+        Self::deserialize(bytes)
+    }
+
+    pub fn new_empty(page_size: usize) -> Self {
         LeafPage {
             page_type: PageType::LeafPage,
             page_size,
@@ -101,7 +108,7 @@ impl LeafPage {
         // Check if the bytes array is long enough for the header
         if bytes.len() < HEADER_SIZE {
             // Return an empty LeafPage if the bytes array is too short
-            return LeafPage::new(bytes.len());
+            return LeafPage::new_empty(bytes.len());
         }
 
         let mut offset = 0;
@@ -209,7 +216,7 @@ impl LeafPage {
         }
         None
     }
-    
+
     // New method that takes a u64 key
     pub fn put(&mut self, key: u64, value: &[u8]) -> bool {
         // Check if key already exists
@@ -274,7 +281,7 @@ impl LeafPage {
 
         true
     }
-    
+
     // New method that takes a u64 key
     pub fn delete(&mut self, key: u64) -> bool {
         // Find and remove the metadata
@@ -286,7 +293,7 @@ impl LeafPage {
             false
         }
     }
-    
+
     pub fn is_full(&self, value: &[u8]) -> bool {
         // Calculate space needed for new entry
         let new_metadata_size = std::mem::size_of::<LeafPageEntry>();
@@ -301,7 +308,7 @@ impl LeafPage {
         // Check if we have enough space
         current_metadata_size + current_data_size + new_metadata_size + new_data_size + HEADER_SIZE > self.page_size
     }
-    
+
     pub fn split(&mut self) -> Option<LeafPage> {
         if self.metadata.len() < 2 {
             return None;
@@ -314,7 +321,7 @@ impl LeafPage {
         let split_point = self.metadata.len() / 2;
 
         // Create new page with same size
-        let mut new_page = LeafPage::new_with_size(self.page_size);
+        let mut new_page = LeafPage::new_empty(self.page_size);
         new_page.page_type = PageType::LeafPage;
 
         // First pass: collect all data
@@ -361,15 +368,9 @@ impl LeafPage {
         Some(new_page)
     }
 
+    // Kept for backward compatibility
     pub fn new_with_size(page_size: usize) -> Self {
-        LeafPage {
-            page_type: PageType::LeafPage,
-            data: Vec::new(),
-            metadata: Vec::new(),
-            page_size,
-            prev_page_id: 0,
-            next_page_id: 0,
-        }
+        Self::new_empty(page_size)
     }
 
     fn compact_data(&mut self) {

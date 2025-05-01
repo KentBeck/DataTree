@@ -83,11 +83,11 @@ impl InMemoryPageStore {
         }
         let (data, crc_bytes) = bytes.split_at(bytes.len() - 4);
         let expected_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap());
-        
+
         if !Self::verify_crc(data, expected_crc) {
             return Err(Box::new(PageCorruptionError));
         }
-        
+
         Ok(data)
     }
 
@@ -112,7 +112,7 @@ impl PageStore for InMemoryPageStore {
                 std::io::ErrorKind::NotFound,
                 "Page not found"
             )))?;
-        
+
         // Extract data and verify CRC
         let data = Self::extract_and_verify_crc(&bytes)?;
         Ok(data.to_vec())
@@ -125,7 +125,7 @@ impl PageStore for InMemoryPageStore {
                 "Page too large",
             )));
         }
-        
+
         // Add CRC to the page
         let bytes_with_crc = Self::add_crc(bytes.to_vec());
         self.pages.insert(page_id, bytes_with_crc);
@@ -135,11 +135,11 @@ impl PageStore for InMemoryPageStore {
     fn allocate_page(&mut self) -> u64 {
         let page_id = self.next_page_id;
         self.next_page_id += 1;
-        
+
         // Initialize the page with an empty LeafPage
-        let page = LeafPage::new(self.page_size);
+        let page = LeafPage::new_empty(self.page_size);
         self.put_page_bytes(page_id, &page.serialize()).unwrap();
-        
+
         page_id
     }
 
@@ -153,7 +153,7 @@ impl PageStore for InMemoryPageStore {
 
     fn get_next_page_id(&self, page_id: u64) -> Option<u64> {
         let bytes = self.pages.get(&page_id)?;
-        let page = LeafPage::deserialize(bytes);
+        let page = LeafPage::new(bytes);
         let next_id = page.next_page_id();
         if next_id == 0 {
             None
@@ -164,7 +164,7 @@ impl PageStore for InMemoryPageStore {
 
     fn get_prev_page_id(&self, page_id: u64) -> Option<u64> {
         let bytes = self.pages.get(&page_id)?;
-        let page = LeafPage::deserialize(bytes);
+        let page = LeafPage::new(bytes);
         let prev_id = page.prev_page_id();
         if prev_id == 0 {
             None
@@ -176,13 +176,13 @@ impl PageStore for InMemoryPageStore {
     fn link_pages(&mut self, prev_page_id: u64, next_page_id: u64) -> Result<(), Box<dyn Error>> {
         // Get and update previous page
         let prev_bytes = self.get_page_bytes(prev_page_id)?;
-        let mut prev_page = LeafPage::deserialize(&prev_bytes);
+        let mut prev_page = LeafPage::new(&prev_bytes);
         prev_page.set_next_page_id(next_page_id);
         self.put_page_bytes(prev_page_id, &prev_page.serialize())?;
 
         // Get and update next page
         let next_bytes = self.get_page_bytes(next_page_id)?;
-        let mut next_page = LeafPage::deserialize(&next_bytes);
+        let mut next_page = LeafPage::new(&next_bytes);
         next_page.set_prev_page_id(prev_page_id);
         self.put_page_bytes(next_page_id, &next_page.serialize())?;
 
@@ -201,4 +201,4 @@ impl PageStore for InMemoryPageStore {
     fn get_page_count(&self) -> usize {
         self.pages.len()
     }
-} 
+}
