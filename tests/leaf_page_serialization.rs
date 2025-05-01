@@ -5,7 +5,7 @@ use data_tree::data_tree::PageType;
 fn test_empty_leaf_page_serialization() {
     // Create an empty LeafPage
     let page_size = 1024;
-    let leaf_page = LeafPage::new(page_size);
+    let leaf_page = LeafPage::new_empty(page_size);
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -31,7 +31,7 @@ fn test_empty_leaf_page_serialization() {
 fn test_leaf_page_with_single_entry() {
     // Create a LeafPage with a single entry
     let page_size = 1024;
-    let mut leaf_page = LeafPage::new(page_size);
+    let mut leaf_page = LeafPage::new_with_size(page_size);
 
     // Add a key-value pair
     let key = 3001u64;
@@ -66,7 +66,7 @@ fn test_leaf_page_with_single_entry() {
 fn test_leaf_page_with_multiple_entries() {
     // Create a LeafPage with multiple entries
     let page_size = 1024;
-    let mut leaf_page = LeafPage::new(page_size);
+    let mut leaf_page = LeafPage::new_with_size(page_size);
 
     // Add several key-value pairs
     let entries = vec![
@@ -109,7 +109,7 @@ fn test_leaf_page_with_multiple_entries() {
 fn test_leaf_page_with_linked_pages() {
     // Create a LeafPage with linked pages
     let page_size = 1024;
-    let mut leaf_page = LeafPage::new(page_size);
+    let mut leaf_page = LeafPage::new_with_size(page_size);
 
     // Set prev and next page IDs
     let prev_page_id = 123;
@@ -150,7 +150,7 @@ fn test_leaf_page_with_linked_pages() {
 fn test_leaf_page_serialization_format() {
     // Create a LeafPage
     let page_size = 1024;
-    let mut leaf_page = LeafPage::new(page_size);
+    let mut leaf_page = LeafPage::new_with_size(page_size);
 
     // Add a key-value pair
     let key = 3301u64;
@@ -207,7 +207,7 @@ fn test_leaf_page_serialization_format() {
 fn test_leaf_page_with_large_data() {
     // Create a LeafPage
     let page_size = 1024;
-    let mut leaf_page = LeafPage::new(page_size);
+    let mut leaf_page = LeafPage::new_with_size(page_size);
 
     // Create a large value (but still small enough to fit in the page)
     let key = 3401u64;
@@ -242,7 +242,7 @@ fn test_leaf_page_with_large_data() {
 fn test_leaf_page_with_max_data() {
     // Create a LeafPage
     let page_size = 1024;
-    let mut leaf_page = LeafPage::new(page_size);
+    let mut leaf_page = LeafPage::new_with_size(page_size);
 
     // Calculate how much data we can fit
     // We need to leave room for:

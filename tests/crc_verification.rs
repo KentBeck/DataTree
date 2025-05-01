@@ -53,7 +53,7 @@ fn test_crc_verification() {
 #[test]
 fn test_crc_verification_on_serialization() {
     // Create a LeafPage
-    let mut leaf_page = LeafPage::new(1024);
+    let mut leaf_page = LeafPage::new_with_size(1024);
 
     // Add some data
     let key1 = 2101u64;
@@ -100,7 +100,7 @@ fn test_crc_verification_on_serialization() {
 
     // We can't directly access the pages field, so we'll have to use the public API
     // Let's create a valid page first
-    let page = LeafPage::new(1024);
+    let page = LeafPage::new_with_size(1024);
     new_store.put_page_bytes(new_page_id, &page.serialize()).unwrap();
 
     // Since we can't directly corrupt the page in the store, let's just verify that
