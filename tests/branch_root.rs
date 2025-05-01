@@ -38,34 +38,34 @@ fn test_branch_root_operations() {
 
     // Insert some key-value pairs
     for i in 0..10 {
-        let key = format!("key{}", i).into_bytes();
+        let key = 1900 + i as u64;
         let value = format!("value{}", i).into_bytes();
-        tree.put(&key, &value).unwrap();
+        tree.put_u64(key, &value).unwrap();
     }
 
     // Retrieve the values
     for i in 0..10 {
-        let key = format!("key{}", i).into_bytes();
-        let value = tree.get(&key).unwrap().unwrap();
+        let key = 1900 + i as u64;
+        let value = tree.get_u64(key).unwrap().unwrap();
         assert_eq!(value, format!("value{}", i).into_bytes());
     }
 
     // Delete some key-value pairs
     for i in 0..5 {
-        let key = format!("key{}", i).into_bytes();
-        assert!(tree.delete(&key).unwrap());
+        let key = 1900 + i as u64;
+        assert!(tree.delete_u64(key).unwrap());
     }
 
     // Check that the deleted keys are gone
     for i in 0..5 {
-        let key = format!("key{}", i).into_bytes();
-        assert!(tree.get(&key).unwrap().is_none());
+        let key = 1900 + i as u64;
+        assert!(tree.get_u64(key).unwrap().is_none());
     }
 
     // Check that the remaining keys are still there
     for i in 5..10 {
-        let key = format!("key{}", i).into_bytes();
-        let value = tree.get(&key).unwrap().unwrap();
+        let key = 1900 + i as u64;
+        let value = tree.get_u64(key).unwrap().unwrap();
         assert_eq!(value, format!("value{}", i).into_bytes());
     }
 }
