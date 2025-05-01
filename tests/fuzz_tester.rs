@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::panic;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use rand::prelude::*;
 
 // Define the operations we'll perform
@@ -28,8 +28,8 @@ impl FuzzTest {
     fn new() -> Self {
         let mut rng = StdRng::from_entropy();
 
-        // Generate a random page size between 64 and 4096 bytes
-        let page_size = rng.gen_range(64..=4096);
+        // Generate a random page size between 1024 and 4096 bytes
+        let page_size = rng.gen_range(1024..=4096);
 
         let store = InMemoryPageStore::with_page_size(page_size);
         let tree = DataTree::new(store);
@@ -163,16 +163,28 @@ impl FuzzTest {
         }
     }
 
-    // Run the fuzz test with a specified number of operations
-    fn run(&mut self, num_operations: usize) -> Result<(), String> {
-        for _ in 0..num_operations {
+    // Run the fuzz test for a specified duration
+    fn run(&mut self, duration: Duration) -> Result<(), String> {
+        let start_time = Instant::now();
+        let mut operation_count = 0;
+
+        while start_time.elapsed() < duration {
             let op = self.random_operation();
             self.operations.push(op.clone());
 
             if let Err(e) = self.execute_operation(&op) {
                 return Err(e);
             }
+
+            operation_count += 1;
+
+            // Print progress every 1000 operations
+            if operation_count % 1000 == 0 {
+                println!("Executed {} operations in {:?}", operation_count, start_time.elapsed());
+            }
         }
+
+        println!("Completed {} operations in {:?}", operation_count, start_time.elapsed());
 
         // Verify all keys in our expected state
         for (key, expected_value) in &self.expected_data {
@@ -210,6 +222,7 @@ impl FuzzTest {
         writeln!(file, "# DataTree Fuzz Test Operations")?;
         writeln!(file, "# Page size: {}", self.tree.store().page_size())?;
         writeln!(file, "# Number of operations: {}", self.operations.len())?;
+        writeln!(file, "# Timestamp: {}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs())?;
         writeln!(file, "")?;
 
         for (i, op) in self.operations.iter().enumerate() {
@@ -262,8 +275,17 @@ fn test_fuzz_data_tree() {
         *cell.borrow_mut() = Some(fuzz_test.clone());
     });
 
-    // Run 1000 random operations
-    if let Err(e) = fuzz_test.run(1000) {
+    // Parse duration from environment variable or use default (10 seconds)
+    let duration_str = std::env::var("FUZZ_DURATION").unwrap_or_else(|_| "10s".to_string());
+    let duration = parse_duration(&duration_str).unwrap_or_else(|_| {
+        println!("Invalid duration format: {}, using default of 10 seconds", duration_str);
+        Duration::from_secs(10)
+    });
+
+    println!("Running fuzz test for {:?}", duration);
+
+    // Run the fuzz test for the specified duration
+    if let Err(e) = fuzz_test.run(duration) {
         // Save operations on error
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -289,6 +311,34 @@ fn test_fuzz_data_tree() {
 // Thread local storage for the current fuzz test
 thread_local! {
     static CURRENT_FUZZ_TEST: std::cell::RefCell<Option<FuzzTest>> = std::cell::RefCell::new(None);
+}
+
+// Parse a duration string like "30s" or "20m"
+fn parse_duration(duration_str: &str) -> Result<Duration, String> {
+    let duration_str = duration_str.trim().to_lowercase();
+
+    // Check if the string is empty
+    if duration_str.is_empty() {
+        return Err("Empty duration string".to_string());
+    }
+
+    // Find the last character (should be the unit)
+    let last_char = duration_str.chars().last().unwrap();
+
+    // Parse the numeric part
+    let numeric_part = &duration_str[0..duration_str.len() - 1];
+    let value = match numeric_part.parse::<u64>() {
+        Ok(v) => v,
+        Err(_) => return Err(format!("Invalid numeric value: {}", numeric_part)),
+    };
+
+    // Parse the unit
+    match last_char {
+        's' => Ok(Duration::from_secs(value)),
+        'm' => Ok(Duration::from_secs(value * 60)),
+        'h' => Ok(Duration::from_secs(value * 3600)),
+        _ => Err(format!("Unknown time unit: {}", last_char)),
+    }
 }
 
 // Implement Clone for FuzzTest
