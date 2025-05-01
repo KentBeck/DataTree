@@ -274,24 +274,7 @@ impl LeafPage {
 
         true
     }
-
-    // Method for backward compatibility
-    pub fn insert_bytes(&mut self, key: &[u8], value: &[u8]) -> bool {
-        // Convert byte array to u64
-        let key_u64 = if key.len() >= 8 {
-            u64::from_le_bytes(key[0..8].try_into().unwrap())
-        } else {
-            // Pad with zeros if key is shorter than 8 bytes
-            let mut padded = [0u8; 8];
-            for (i, &b) in key.iter().enumerate() {
-                padded[i] = b;
-            }
-            u64::from_le_bytes(padded)
-        };
-
-        self.insert(key_u64, value)
-    }
-
+    
     // New method that takes a u64 key
     pub fn delete(&mut self, key: u64) -> bool {
         // Find and remove the metadata
@@ -303,24 +286,7 @@ impl LeafPage {
             false
         }
     }
-
-    // Method for backward compatibility
-    pub fn delete_bytes(&mut self, key: &[u8]) -> bool {
-        // Convert byte array to u64
-        let key_u64 = if key.len() >= 8 {
-            u64::from_le_bytes(key[0..8].try_into().unwrap())
-        } else {
-            // Pad with zeros if key is shorter than 8 bytes
-            let mut padded = [0u8; 8];
-            for (i, &b) in key.iter().enumerate() {
-                padded[i] = b;
-            }
-            u64::from_le_bytes(padded)
-        };
-
-        self.delete(key_u64)
-    }
-
+    
     pub fn is_full(&self, value: &[u8]) -> bool {
         // Calculate space needed for new entry
         let new_metadata_size = std::mem::size_of::<LeafPageEntry>();
@@ -335,12 +301,7 @@ impl LeafPage {
         // Check if we have enough space
         current_metadata_size + current_data_size + new_metadata_size + new_data_size + HEADER_SIZE > self.page_size
     }
-
-    // Method for backward compatibility
-    pub fn is_full_bytes(&self, _key: &[u8], value: &[u8]) -> bool {
-        self.is_full(value)
-    }
-
+    
     pub fn split(&mut self) -> Option<LeafPage> {
         if self.metadata.len() < 2 {
             return None;
