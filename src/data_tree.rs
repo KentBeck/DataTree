@@ -412,4 +412,44 @@ impl<S: PageStore> DataTree<S> {
             dirty_pages: HashSet::new(),
         }
     }
+
+    /// Get a value by its u64 key
+    pub fn get_u64(&self, key: u64) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
+        // Convert u64 key to bytes
+        let key_bytes = key.to_le_bytes();
+        self.get(&key_bytes)
+    }
+
+    /// Put a value with a u64 key
+    pub fn put_u64(&mut self, key: u64, value: &[u8]) -> Result<(), Box<dyn Error>> {
+        // Convert u64 key to bytes
+        let key_bytes = key.to_le_bytes();
+        self.put(&key_bytes, value)
+    }
+
+    /// Delete a value by its u64 key
+    pub fn delete_u64(&mut self, key: u64) -> Result<bool, Box<dyn Error>> {
+        // Convert u64 key to bytes
+        let key_bytes = key.to_le_bytes();
+        self.delete(&key_bytes)
+    }
+
+    /// Convert a byte array to a u64
+    pub fn bytes_to_u64(key: &[u8]) -> u64 {
+        if key.len() >= 8 {
+            u64::from_le_bytes(key[0..8].try_into().unwrap())
+        } else {
+            // Pad with zeros if key is shorter than 8 bytes
+            let mut padded = [0u8; 8];
+            for (i, &b) in key.iter().enumerate() {
+                padded[i] = b;
+            }
+            u64::from_le_bytes(padded)
+        }
+    }
+
+    /// Convert a u64 to a byte array
+    pub fn u64_to_bytes(key: u64) -> [u8; 8] {
+        key.to_le_bytes()
+    }
 }

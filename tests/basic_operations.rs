@@ -10,12 +10,7 @@ fn test_page_splitting() {
     let mut tree = DataTree::new(store);
 
     // Insert data that will require multiple pages
-    let keys = vec![
-        b"key1".to_vec(),
-        b"key2".to_vec(),
-        b"key3".to_vec(),
-        b"key4".to_vec(),
-    ];
+    let keys = vec![1, 2, 3, 4];
     let values = vec![
         b"value1".to_vec(),
         b"value2".to_vec(),
@@ -25,12 +20,12 @@ fn test_page_splitting() {
 
     // Insert all key-value pairs
     for (key, value) in keys.iter().zip(values.iter()) {
-        tree.put(key, value).unwrap();
+        tree.put_u64(*key, value).unwrap();
     }
 
     // Verify all data can be retrieved
     for (key, expected_value) in keys.iter().zip(values.iter()) {
-        let retrieved_value = tree.get(key).unwrap().unwrap();
+        let retrieved_value = tree.get_u64(*key).unwrap().unwrap();
         assert_eq!(retrieved_value, *expected_value);
     }
 
@@ -49,12 +44,7 @@ fn test_page_cleanup_after_deletion() {
     let mut tree = DataTree::new(store);
 
     // Insert data that will require multiple pages
-    let keys = vec![
-        b"key1".to_vec(),
-        b"key2".to_vec(),
-        b"key3".to_vec(),
-        b"key4".to_vec(),
-    ];
+    let keys = vec![10, 11, 12, 13];
     let values = vec![
         b"value1".to_vec(),
         b"value2".to_vec(),
@@ -64,7 +54,7 @@ fn test_page_cleanup_after_deletion() {
 
     // Insert all key-value pairs
     for (key, value) in keys.iter().zip(values.iter()) {
-        tree.put(key, value).unwrap();
+        tree.put_u64(*key, value).unwrap();
     }
 
     // Get the page count before deletion
@@ -78,7 +68,7 @@ fn test_page_cleanup_after_deletion() {
 
     // Delete all entries
     for key in keys_to_delete {
-        tree.delete(&key).unwrap();
+        tree.delete_u64(key).unwrap();
     }
 
     // Verify that the page count has decreased
@@ -90,7 +80,7 @@ fn test_page_cleanup_after_deletion() {
 
     // Verify all keys are gone
     for key in &keys {
-        assert!(tree.get(key).unwrap().is_none());
+        assert!(tree.get_u64(*key).unwrap().is_none());
     }
 }
 
@@ -101,7 +91,7 @@ fn test_page_type_serialization() {
     let mut tree = DataTree::new(store);
 
     // Insert some data
-    tree.put(b"key1", b"value1").unwrap();
+    tree.put_u64(100, b"value1").unwrap();
 
     // Get the page and verify its type
     let store = tree.store();
@@ -124,7 +114,7 @@ fn test_page_corruption_detection() {
     let mut tree = DataTree::new(store);
 
     // Insert some data
-    tree.put(b"key1", b"value1").unwrap();
+    tree.put_u64(101, b"value1").unwrap();
 
     // Get the page ID and corrupt it
     let page_id = tree.root_page_id();
@@ -143,19 +133,19 @@ fn test_crc_verification_on_updates() {
     let mut tree = DataTree::new(store);
 
     // Insert initial data
-    tree.put(b"key1", b"value1").unwrap();
-    tree.put(b"key2", b"value2").unwrap();
+    tree.put_u64(102, b"value1").unwrap();
+    tree.put_u64(103, b"value2").unwrap();
 
     // Verify data can be read
-    assert_eq!(tree.get(b"key1").unwrap().unwrap(), b"value1");
-    assert_eq!(tree.get(b"key2").unwrap().unwrap(), b"value2");
+    assert_eq!(tree.get_u64(102).unwrap().unwrap(), b"value1");
+    assert_eq!(tree.get_u64(103).unwrap().unwrap(), b"value2");
 
     // Update a value with same length
-    tree.put(b"key1", b"value1").unwrap(); // No change, just verify CRC works
+    tree.put_u64(102, b"value1").unwrap(); // No change, just verify CRC works
 
     // Verify the update was successful and CRC is maintained
-    assert_eq!(tree.get(b"key1").unwrap().unwrap(), b"value1");
-    assert_eq!(tree.get(b"key2").unwrap().unwrap(), b"value2");
+    assert_eq!(tree.get_u64(102).unwrap().unwrap(), b"value1");
+    assert_eq!(tree.get_u64(103).unwrap().unwrap(), b"value2");
 }
 
 #[test]
@@ -169,9 +159,9 @@ fn test_multiple_page_corruption_scenarios() {
     let value2 = vec![2u8; 20]; // 20 bytes
     let value3 = vec![3u8; 20]; // 20 bytes
 
-    tree.put(b"key1", &value1).unwrap();
-    tree.put(b"key2", &value2).unwrap();
-    tree.put(b"key3", &value3).unwrap();
+    tree.put_u64(201, &value1).unwrap();
+    tree.put_u64(202, &value2).unwrap();
+    tree.put_u64(203, &value3).unwrap();
 
     // Get root page ID before corrupting
     let root_id = tree.root_page_id();
@@ -180,11 +170,11 @@ fn test_multiple_page_corruption_scenarios() {
     tree.store_mut().corrupt_page_for_testing(root_id);
 
     // Verify we get an error when trying to read from corrupted page
-    assert!(tree.get(b"key1").is_err());
+    assert!(tree.get_u64(201).is_err());
 
     // Since we corrupted the root page, all subsequent reads should fail
-    assert!(tree.get(b"key2").is_err());
-    assert!(tree.get(b"key3").is_err());
+    assert!(tree.get_u64(202).is_err());
+    assert!(tree.get_u64(203).is_err());
 }
 
 #[test]
@@ -194,18 +184,18 @@ fn test_error_handling_with_corrupted_pages() {
     let mut tree = DataTree::new(store);
 
     // Insert some data
-    tree.put(b"key1", b"value1").unwrap();
-    tree.put(b"key2", b"value2").unwrap();
+    tree.put_u64(301, b"value1").unwrap();
+    tree.put_u64(302, b"value2").unwrap();
 
     // Corrupt a page
     let page_id = tree.root_page_id();
     tree.store_mut().corrupt_page_for_testing(page_id);
 
     // Test various operations with corrupted page
-    assert!(tree.get(b"key1").is_err());
-    assert!(tree.get(b"key2").is_err());
-    assert!(tree.put(b"key3", b"value3").is_err());
-    assert!(tree.delete(b"key1").is_err());
+    assert!(tree.get_u64(301).is_err());
+    assert!(tree.get_u64(302).is_err());
+    assert!(tree.put_u64(303, b"value3").is_err());
+    assert!(tree.delete_u64(301).is_err());
 }
 
 #[test]
@@ -216,9 +206,9 @@ fn test_crc_verification_on_page_cleanup() {
 
     // Insert data that will require multiple pages
     for i in 0..5 {
-        let key = format!("key{}", i).into_bytes();
+        let key = 400 + i as u64;
         let value = format!("value{}", i).into_bytes();
-        tree.put(&key, &value).unwrap();
+        tree.put_u64(key, &value).unwrap();
     }
 
     // Get the root page ID
@@ -228,10 +218,9 @@ fn test_crc_verification_on_page_cleanup() {
     tree.store_mut().corrupt_page_for_testing(root_page_id);
 
     // Attempt to delete from the tree with corrupted root page
-    let key = b"key4".to_vec();
-    assert!(tree.delete(&key).is_err());
+    assert!(tree.delete_u64(404).is_err());
 
     // Verify all operations fail with corrupted root page
-    assert!(tree.get(b"key0").is_err());
-    assert!(tree.get(b"key1").is_err());
+    assert!(tree.get_u64(400).is_err());
+    assert!(tree.get_u64(401).is_err());
 }
