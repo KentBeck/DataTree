@@ -10,12 +10,12 @@ fn test_rle_leaf_page_adjacent_runs_merge() {
     // Add first run
     let value = b"same_value";
     for key in 1000..=1005 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Add second run (adjacent to first)
     for key in 1006..=1010 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Check that we have only one metadata entry (runs should be merged)
@@ -43,12 +43,12 @@ fn test_rle_leaf_page_value_deduplication() {
 
     // First run
     for key in 1000..=1005 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Second run (not adjacent)
     for key in 2000..=2005 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Check that we have two metadata entries (two runs)
@@ -70,17 +70,17 @@ fn test_rle_leaf_page_insert_at_run_boundaries() {
     // Add a run
     let value1 = b"value1";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // Insert different values at the boundaries
     let value2 = b"value2";
 
     // Insert at start boundary
-    assert!(leaf_page.insert(999, value2));
+    assert!(leaf_page.put(999, value2));
 
     // Insert at end boundary
-    assert!(leaf_page.insert(1011, value2));
+    assert!(leaf_page.put(1011, value2));
 
     // Check that we have three metadata entries
     assert_eq!(leaf_page.metadata.len(), 3);
@@ -102,12 +102,12 @@ fn test_rle_leaf_page_delete_entire_run() {
     // Add two runs
     let value1 = b"value1";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     let value2 = b"value2";
     for key in 2000..=2010 {
-        assert!(leaf_page.insert(key, value2));
+        assert!(leaf_page.put(key, value2));
     }
 
     // Delete all keys in the first run
@@ -138,7 +138,7 @@ fn test_rle_leaf_page_delete_at_run_boundaries() {
     // Add a run
     let value = b"value";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Delete at start boundary
@@ -173,13 +173,13 @@ fn test_rle_leaf_page_update_value_in_run() {
     // Add a run
     let value1 = b"value1";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // Update a value in the middle
     let middle_key = 1005;
     let value2 = b"value2";
-    assert!(leaf_page.insert(middle_key, value2));
+    assert!(leaf_page.put(middle_key, value2));
 
     // Check that we now have three metadata entries
     assert_eq!(leaf_page.metadata.len(), 3);
@@ -203,13 +203,13 @@ fn test_rle_leaf_page_update_multiple_values() {
     // Add a run
     let value1 = b"value1";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // Update a range of values in the middle
     let value2 = b"value2";
     for key in 1003..=1007 {
-        assert!(leaf_page.insert(key, value2));
+        assert!(leaf_page.put(key, value2));
     }
 
     // We should have at least 3 metadata entries, but could have more
@@ -243,7 +243,7 @@ fn test_rle_leaf_page_compact_data() {
 
     for (range, value) in &runs {
         for key in range.clone() {
-            assert!(leaf_page.insert(key, *value));
+            assert!(leaf_page.put(key, *value));
         }
     }
 
@@ -281,7 +281,7 @@ fn test_rle_leaf_page_is_full() {
 
     // Insert the value a few times
     for i in 0..5 {
-        assert!(leaf_page.insert(i, value));
+        assert!(leaf_page.put(i, value));
     }
 
     // Create a value that's too large to fit
@@ -291,7 +291,7 @@ fn test_rle_leaf_page_is_full() {
     assert!(leaf_page.is_full(&large_value));
 
     // Try to add the large value (should fail)
-    assert!(!leaf_page.insert(100, &large_value));
+    assert!(!leaf_page.put(100, &large_value));
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn test_rle_leaf_page_serialization_format() {
     // Add a run
     let value = b"test_value";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Serialize the page
@@ -346,7 +346,7 @@ fn test_rle_leaf_page_with_large_data() {
 
     // Add a run with the large value
     for key in 1000..=1005 {
-        assert!(leaf_page.insert(key, &value));
+        assert!(leaf_page.put(key, &value));
     }
 
     // Check that we have one metadata entry
@@ -383,7 +383,7 @@ fn test_rle_leaf_page_with_max_data() {
     let value = vec![b'y'; max_value_size]; // Fill with 'y'
 
     // Add a key with the maximum value size
-    assert!(leaf_page.insert(1000, &value));
+    assert!(leaf_page.put(1000, &value));
 
     // Verify the key can be retrieved
     assert_eq!(leaf_page.get(1000).unwrap(), value);
@@ -416,7 +416,7 @@ fn test_rle_leaf_page_with_linked_pages() {
     // Add a run
     let value = b"test_value";
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Serialize the page
@@ -443,22 +443,22 @@ fn test_rle_leaf_page_complex_operations() {
 
     // First run
     for key in 1000..=1010 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // Second run
     for key in 2000..=2010 {
-        assert!(leaf_page.insert(key, value2));
+        assert!(leaf_page.put(key, value2));
     }
 
     // Third run
     for key in 3000..=3010 {
-        assert!(leaf_page.insert(key, value3));
+        assert!(leaf_page.put(key, value3));
     }
 
     // 2. Update some values
     for key in 1005..=1007 {
-        assert!(leaf_page.insert(key, value2));
+        assert!(leaf_page.put(key, value2));
     }
 
     // 3. Delete some keys
@@ -468,7 +468,7 @@ fn test_rle_leaf_page_complex_operations() {
 
     // 4. Add more keys
     for key in 4000..=4005 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // 5. Verify all operations

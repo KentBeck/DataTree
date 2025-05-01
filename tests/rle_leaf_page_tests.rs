@@ -35,7 +35,7 @@ fn test_rle_leaf_page_with_single_key() {
     // Add a key-value pair
     let key = 3001u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.put(key, value));
 
     // Verify the key can be retrieved
     let retrieved_value = leaf_page.get(key).unwrap();
@@ -68,7 +68,7 @@ fn test_rle_leaf_page_with_run() {
     let value = b"same_value";
 
     for key in start_key..=end_key {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Check that we have only one metadata entry (one run)
@@ -112,7 +112,7 @@ fn test_rle_leaf_page_with_multiple_runs() {
     let value1 = b"value1";
 
     for key in start_key1..=end_key1 {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // Add second run
@@ -121,7 +121,7 @@ fn test_rle_leaf_page_with_multiple_runs() {
     let value2 = b"value2";
 
     for key in start_key2..=end_key2 {
-        assert!(leaf_page.insert(key, value2));
+        assert!(leaf_page.put(key, value2));
     }
 
     // Check that we have two metadata entries (two runs)
@@ -172,13 +172,13 @@ fn test_rle_leaf_page_insert_in_middle_of_run() {
     let value1 = b"value1";
 
     for key in start_key..=end_key {
-        assert!(leaf_page.insert(key, value1));
+        assert!(leaf_page.put(key, value1));
     }
 
     // Insert a different value in the middle of the run
     let middle_key = 1005u64;
     let value2 = b"value2";
-    assert!(leaf_page.insert(middle_key, value2));
+    assert!(leaf_page.put(middle_key, value2));
 
     // Check that we now have three metadata entries (three runs)
     assert_eq!(leaf_page.metadata.len(), 3);
@@ -210,7 +210,7 @@ fn test_rle_leaf_page_delete() {
     let value = b"value";
 
     for key in start_key..=end_key {
-        assert!(leaf_page.insert(key, value));
+        assert!(leaf_page.put(key, value));
     }
 
     // Delete a key from the middle
@@ -250,7 +250,7 @@ fn test_rle_leaf_page_split() {
 
     for (start, end, value) in &runs {
         for key in *start..=*end {
-            assert!(leaf_page.insert(key, *value));
+            assert!(leaf_page.put(key, *value));
         }
     }
 

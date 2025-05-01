@@ -224,7 +224,7 @@ impl RleLeafPage {
     }
 
     // Insert a key-value pair
-    pub fn insert(&mut self, key: u64, value: &[u8]) -> bool {
+    pub fn put(&mut self, key: u64, value: &[u8]) -> bool {
         // First, check if we need to update an existing run
         let mut found_run = false;
         let mut run_index = 0;
