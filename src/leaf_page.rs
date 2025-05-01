@@ -209,24 +209,7 @@ impl LeafPage {
         }
         None
     }
-
-    // Method for backward compatibility
-    pub fn get_bytes(&self, key: &[u8]) -> Option<&[u8]> {
-        // Convert byte array to u64
-        let key_u64 = if key.len() >= 8 {
-            u64::from_le_bytes(key[0..8].try_into().unwrap())
-        } else {
-            // Pad with zeros if key is shorter than 8 bytes
-            let mut padded = [0u8; 8];
-            for (i, &b) in key.iter().enumerate() {
-                padded[i] = b;
-            }
-            u64::from_le_bytes(padded)
-        };
-
-        self.get(key_u64)
-    }
-
+    
     // New method that takes a u64 key
     pub fn insert(&mut self, key: u64, value: &[u8]) -> bool {
         // Check if key already exists
