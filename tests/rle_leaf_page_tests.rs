@@ -1,11 +1,11 @@
-use data_tree::rle_leaf_page::RleLeafPage;
+use data_tree::rle_leaf_page::RLELeafPage;
 use data_tree::data_tree::PageType;
 
 #[test]
 fn test_empty_rle_leaf_page_serialization() {
     // Create an empty RleLeafPage
     let page_size = 1024;
-    let leaf_page = RleLeafPage::new_empty(page_size);
+    let leaf_page = RLELeafPage::new_empty(page_size);
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -17,7 +17,7 @@ fn test_empty_rle_leaf_page_serialization() {
     assert_eq!(serialized[0], PageType::RleLeafPage.to_u8());
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Check that the deserialized page has the expected properties
     assert_eq!(deserialized.metadata.len(), 0);
@@ -30,7 +30,7 @@ fn test_empty_rle_leaf_page_serialization() {
 fn test_rle_leaf_page_with_single_key() {
     // Create a RleLeafPage with a single key
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a key-value pair
     let key = 3001u64;
@@ -45,7 +45,7 @@ fn test_rle_leaf_page_with_single_key() {
     let serialized = leaf_page.serialize();
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Check that the deserialized page has the expected properties
     assert_eq!(deserialized.metadata.len(), 1);
@@ -60,7 +60,7 @@ fn test_rle_leaf_page_with_single_key() {
 fn test_rle_leaf_page_with_run() {
     // Create a RleLeafPage with a run of keys with the same value
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a sequence of keys with the same value
     let start_key = 1000u64;
@@ -88,7 +88,7 @@ fn test_rle_leaf_page_with_run() {
     let serialized = leaf_page.serialize();
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Check that the deserialized page has the expected properties
     assert_eq!(deserialized.metadata.len(), 1);
@@ -104,7 +104,7 @@ fn test_rle_leaf_page_with_run() {
 fn test_rle_leaf_page_with_multiple_runs() {
     // Create a RleLeafPage with multiple runs
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add first run
     let start_key1 = 1000u64;
@@ -143,7 +143,7 @@ fn test_rle_leaf_page_with_multiple_runs() {
     let serialized = leaf_page.serialize();
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Check that the deserialized page has the expected properties
     assert_eq!(deserialized.metadata.len(), 2);
@@ -164,7 +164,7 @@ fn test_rle_leaf_page_with_multiple_runs() {
 fn test_rle_leaf_page_insert_in_middle_of_run() {
     // Create a RleLeafPage with a run
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let start_key = 1000u64;
@@ -202,7 +202,7 @@ fn test_rle_leaf_page_insert_in_middle_of_run() {
 fn test_rle_leaf_page_delete() {
     // Create a RleLeafPage with a run
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let start_key = 1000u64;
@@ -238,7 +238,7 @@ fn test_rle_leaf_page_delete() {
 fn test_rle_leaf_page_split() {
     // Create a RleLeafPage with multiple runs
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add several runs
     let runs = vec![

@@ -1,11 +1,11 @@
-use data_tree::rle_leaf_page::RleLeafPage;
+use data_tree::rle_leaf_page::RLELeafPage;
 use data_tree::data_tree::PageType;
 
 #[test]
 fn test_rle_leaf_page_adjacent_runs_merge() {
     // Test that adjacent runs with the same value get merged
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add first run
     let value = b"same_value";
@@ -36,7 +36,7 @@ fn test_rle_leaf_page_adjacent_runs_merge() {
 fn test_rle_leaf_page_value_deduplication() {
     // Test that identical values are stored only once
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add two runs with the same value but different keys
     let value = b"duplicate_value";
@@ -65,7 +65,7 @@ fn test_rle_leaf_page_value_deduplication() {
 fn test_rle_leaf_page_insert_at_run_boundaries() {
     // Test inserting at the boundaries of runs
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let value1 = b"value1";
@@ -97,7 +97,7 @@ fn test_rle_leaf_page_insert_at_run_boundaries() {
 fn test_rle_leaf_page_delete_entire_run() {
     // Test deleting an entire run
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add two runs
     let value1 = b"value1";
@@ -133,7 +133,7 @@ fn test_rle_leaf_page_delete_entire_run() {
 fn test_rle_leaf_page_delete_at_run_boundaries() {
     // Test deleting at the boundaries of runs
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let value = b"value";
@@ -168,7 +168,7 @@ fn test_rle_leaf_page_delete_at_run_boundaries() {
 fn test_rle_leaf_page_update_value_in_run() {
     // Test updating a value in the middle of a run
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let value1 = b"value1";
@@ -198,7 +198,7 @@ fn test_rle_leaf_page_update_value_in_run() {
 fn test_rle_leaf_page_update_multiple_values() {
     // Test updating multiple values in a run
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let value1 = b"value1";
@@ -232,7 +232,7 @@ fn test_rle_leaf_page_update_multiple_values() {
 fn test_rle_leaf_page_compact_data() {
     // Test that data gets compacted when needed
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add several runs with different values
     let runs = vec![
@@ -274,7 +274,7 @@ fn test_rle_leaf_page_compact_data() {
 fn test_rle_leaf_page_is_full() {
     // Test the is_full method
     let page_size = 100; // Small page size to make it easier to fill
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Create a value that's small enough to fit initially
     let value = b"test";
@@ -298,7 +298,7 @@ fn test_rle_leaf_page_is_full() {
 fn test_rle_leaf_page_serialization_format() {
     // Test the serialization format
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Add a run
     let value = b"test_value";
@@ -322,7 +322,7 @@ fn test_rle_leaf_page_serialization_format() {
     assert!(data_start > 0);
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Check that the deserialized page has the expected properties
     assert_eq!(deserialized.metadata.len(), 1);
@@ -339,7 +339,7 @@ fn test_rle_leaf_page_serialization_format() {
 fn test_rle_leaf_page_with_large_data() {
     // Test with large values
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Create a large value
     let value = vec![b'x'; 500]; // 500 bytes of 'x'
@@ -364,7 +364,7 @@ fn test_rle_leaf_page_with_large_data() {
     assert!(serialized.len() <= page_size);
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Verify all keys can still be retrieved
     for key in 1000..=1005 {
@@ -376,7 +376,7 @@ fn test_rle_leaf_page_with_large_data() {
 fn test_rle_leaf_page_with_max_data() {
     // Test with maximum data that can fit in a page
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Calculate how much data we can fit
     let max_value_size = leaf_page.max_value_size();
@@ -395,7 +395,7 @@ fn test_rle_leaf_page_with_max_data() {
     assert!(serialized.len() <= page_size);
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Verify the key can still be retrieved
     assert_eq!(deserialized.get(1000).unwrap(), value);
@@ -405,7 +405,7 @@ fn test_rle_leaf_page_with_max_data() {
 fn test_rle_leaf_page_with_linked_pages() {
     // Test with linked pages
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // Set prev and next page IDs
     let prev_page_id = 123;
@@ -423,7 +423,7 @@ fn test_rle_leaf_page_with_linked_pages() {
     let serialized = leaf_page.serialize();
 
     // Deserialize the page
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // Check that the page IDs are preserved
     assert_eq!(deserialized.prev_page_id(), prev_page_id);
@@ -434,7 +434,7 @@ fn test_rle_leaf_page_with_linked_pages() {
 fn test_rle_leaf_page_complex_operations() {
     // Test a complex sequence of operations
     let page_size = 1024;
-    let mut leaf_page = RleLeafPage::new_empty(page_size);
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
 
     // 1. Add several runs
     let value1 = b"value1";
@@ -506,7 +506,7 @@ fn test_rle_leaf_page_complex_operations() {
 
     // 6. Serialize and deserialize
     let serialized = leaf_page.serialize();
-    let deserialized = RleLeafPage::deserialize(&serialized);
+    let deserialized = RLELeafPage::deserialize(&serialized);
 
     // 7. Verify everything is still correct after deserialization
     assert!(deserialized.get(1000).is_none());

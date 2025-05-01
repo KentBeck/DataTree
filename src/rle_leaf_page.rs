@@ -16,7 +16,7 @@ impl Error for KeyNotFoundError {}
 
 // Metadata for each run of key-value pairs with identical values
 #[derive(Debug, Clone, Copy)]
-pub struct RleLeafPageEntry {
+pub struct RLELeafPageEntry {
     pub start_key: u64,     // First key in the run
     pub end_key: u64,       // Last key in the run (inclusive)
     pub value_offset: usize, // Offset of the value in the data array
@@ -41,16 +41,16 @@ pub const VALUE_LENGTH_SIZE: usize = 8; // 8 bytes for value length
 pub const METADATA_ENTRY_SIZE: usize = START_KEY_SIZE + END_KEY_SIZE + VALUE_OFFSET_SIZE + VALUE_LENGTH_SIZE;
 
 #[derive(Debug)]
-pub struct RleLeafPage {
+pub struct RLELeafPage {
     pub page_type: PageType,
     pub page_size: usize,
-    pub metadata: Vec<RleLeafPageEntry>,
+    pub metadata: Vec<RLELeafPageEntry>,
     pub data: Vec<u8>,
     pub prev_page_id: u64,
     pub next_page_id: u64,
 }
 
-impl RleLeafPage {
+impl RLELeafPage {
     pub fn new(bytes: &[u8]) -> Self {
         if bytes.is_empty() {
             return Self::new_empty(bytes.len());
@@ -59,7 +59,7 @@ impl RleLeafPage {
     }
 
     pub fn new_empty(page_size: usize) -> Self {
-        RleLeafPage {
+        RLELeafPage {
             page_type: PageType::RleLeafPage,
             page_size,
             metadata: Vec::new(),
@@ -117,7 +117,7 @@ impl RleLeafPage {
         // Check if the bytes array is long enough for the header
         if bytes.len() < HEADER_SIZE {
             // Return an empty RleLeafPage if the bytes array is too short
-            return RleLeafPage::new_empty(bytes.len());
+            return RLELeafPage::new_empty(bytes.len());
         }
 
         let mut offset = 0;
@@ -163,7 +163,7 @@ impl RleLeafPage {
             let value_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
             offset += 8;
 
-            metadata.push(RleLeafPageEntry {
+            metadata.push(RLELeafPageEntry {
                 start_key,
                 end_key,
                 value_offset,
@@ -181,7 +181,7 @@ impl RleLeafPage {
             Vec::new()
         };
 
-        RleLeafPage {
+        RLELeafPage {
             page_type,
             page_size: bytes.len(),
             metadata,
@@ -195,7 +195,7 @@ impl RleLeafPage {
         self.page_type
     }
 
-    pub fn metadata(&self) -> &[RleLeafPageEntry] {
+    pub fn metadata(&self) -> &[RLELeafPageEntry] {
         &self.metadata
     }
 
@@ -348,7 +348,7 @@ impl RleLeafPage {
         }
 
         // Create new metadata entry
-        let new_meta = RleLeafPageEntry {
+        let new_meta = RLELeafPageEntry {
             start_key: key,
             end_key: key,
             value_offset,
@@ -420,7 +420,7 @@ impl RleLeafPage {
         if key == meta.start_key {
             // Key is at the start of the run
             // Create a new run for the key
-            let new_meta1 = RleLeafPageEntry {
+            let new_meta1 = RLELeafPageEntry {
                 start_key: key,
                 end_key: key,
                 value_offset,
@@ -429,7 +429,7 @@ impl RleLeafPage {
 
             // Create a run for the rest of the original run
             if meta.end_key > key {
-                let new_meta2 = RleLeafPageEntry {
+                let new_meta2 = RLELeafPageEntry {
                     start_key: key + 1,
                     end_key: meta.end_key,
                     value_offset: meta.value_offset,
@@ -442,7 +442,7 @@ impl RleLeafPage {
         } else if key == meta.end_key {
             // Key is at the end of the run
             // Create a run for the original run except the last key
-            let new_meta1 = RleLeafPageEntry {
+            let new_meta1 = RLELeafPageEntry {
                 start_key: meta.start_key,
                 end_key: key - 1,
                 value_offset: meta.value_offset,
@@ -450,7 +450,7 @@ impl RleLeafPage {
             };
 
             // Create a new run for the key
-            let new_meta2 = RleLeafPageEntry {
+            let new_meta2 = RLELeafPageEntry {
                 start_key: key,
                 end_key: key,
                 value_offset,
@@ -462,7 +462,7 @@ impl RleLeafPage {
         } else {
             // Key is in the middle of the run
             // Create a run for the part before the key
-            let new_meta1 = RleLeafPageEntry {
+            let new_meta1 = RLELeafPageEntry {
                 start_key: meta.start_key,
                 end_key: key - 1,
                 value_offset: meta.value_offset,
@@ -470,7 +470,7 @@ impl RleLeafPage {
             };
 
             // Create a new run for the key
-            let new_meta2 = RleLeafPageEntry {
+            let new_meta2 = RLELeafPageEntry {
                 start_key: key,
                 end_key: key,
                 value_offset,
@@ -478,7 +478,7 @@ impl RleLeafPage {
             };
 
             // Create a run for the part after the key
-            let new_meta3 = RleLeafPageEntry {
+            let new_meta3 = RLELeafPageEntry {
                 start_key: key + 1,
                 end_key: meta.end_key,
                 value_offset: meta.value_offset,
@@ -528,7 +528,7 @@ impl RleLeafPage {
             self.metadata[run_index].end_key = key - 1;
         } else {
             // Key is in the middle of the run, need to split
-            let new_meta = RleLeafPageEntry {
+            let new_meta = RLELeafPageEntry {
                 start_key: key + 1,
                 end_key: meta.end_key,
                 value_offset: meta.value_offset,
@@ -571,7 +571,7 @@ impl RleLeafPage {
     }
 
     // Split the page into two
-    pub fn split(&mut self) -> Option<RleLeafPage> {
+    pub fn split(&mut self) -> Option<RLELeafPage> {
         if self.metadata.len() < 2 {
             return None;
         }
@@ -583,7 +583,7 @@ impl RleLeafPage {
         let split_point = self.metadata.len() / 2;
 
         // Create new page with same size
-        let mut new_page = RleLeafPage::new_empty(self.page_size);
+        let mut new_page = RLELeafPage::new_empty(self.page_size);
         new_page.page_type = PageType::RleLeafPage;
 
         // Move metadata entries to the new page
