@@ -14,7 +14,7 @@ fn test_empty_rle_leaf_page_serialization() {
     assert!(!serialized.is_empty());
 
     // Check that the first byte is the correct page type
-    assert_eq!(serialized[0], PageType::LeafPage.to_u8());
+    assert_eq!(serialized[0], PageType::RleLeafPage.to_u8());
 
     // Deserialize the page
     let deserialized = RleLeafPage::deserialize(&serialized);

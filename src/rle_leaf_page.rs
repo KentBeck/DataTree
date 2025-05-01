@@ -53,7 +53,7 @@ pub struct RleLeafPage {
 impl RleLeafPage {
     pub fn new(page_size: usize) -> Self {
         RleLeafPage {
-            page_type: PageType::LeafPage,
+            page_type: PageType::RleLeafPage,
             page_size,
             metadata: Vec::new(),
             data: Vec::new(),
@@ -116,7 +116,7 @@ impl RleLeafPage {
         let mut offset = 0;
 
         // Read page type (1 byte)
-        let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::LeafPage);
+        let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::RleLeafPage);
         offset += 1;
 
         // Read metadata count (8 bytes)
@@ -577,7 +577,7 @@ impl RleLeafPage {
 
         // Create new page with same size
         let mut new_page = RleLeafPage::new(self.page_size);
-        new_page.page_type = PageType::LeafPage;
+        new_page.page_type = PageType::RleLeafPage;
 
         // Move metadata entries to the new page
         let entries_to_move = self.metadata.split_off(split_point);

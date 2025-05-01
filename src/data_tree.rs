@@ -8,6 +8,7 @@ use crate::page_store::PageStore;
 pub enum PageType {
     LeafPage = 1,
     BranchPage = 2,
+    RleLeafPage = 3,
     // Future page types will be added here
 }
 
@@ -16,6 +17,7 @@ impl PageType {
         match value {
             1 => Some(PageType::LeafPage),
             2 => Some(PageType::BranchPage),
+            3 => Some(PageType::RleLeafPage),
             _ => None,
         }
     }
