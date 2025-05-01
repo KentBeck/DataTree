@@ -56,7 +56,7 @@ impl<S: PageStore> DataTree<S> {
             dirty_pages: HashSet::new(),
         }
     }
-    
+
     pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
         self.dirty_pages.clear();
         Ok(())
@@ -134,22 +134,8 @@ impl<S: PageStore> DataTree<S> {
             // Key not found
             return Ok(None);
         } else {
-            // For backward compatibility, handle the case where root is a LeafPage
-            let mut current_page_id = self.root_page_id;
-            loop {
-                let page_bytes = self.store.get_page_bytes(current_page_id)?;
-                let page = LeafPage::deserialize(&page_bytes);
-
-                if let Some(value) = page.get(key) {
-                    return Ok(Some(value.to_vec()));
-                }
-
-                if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
-                    current_page_id = next_page_id;
-                } else {
-                    return Ok(None);
-                }
-            }
+            // Root is not a BranchPage, which is unexpected
+            return Err("Root page is not a BranchPage".into());
         }
     }
 
@@ -221,46 +207,8 @@ impl<S: PageStore> DataTree<S> {
                 return Err("Could not find a leaf page for the key".into());
             }
         } else {
-            // For backward compatibility, handle the case where root is a LeafPage
-            let mut current_page_id = self.root_page_id;
-            loop {
-                let page_bytes = self.store.get_page_bytes(current_page_id)?;
-                let mut page = LeafPage::deserialize(&page_bytes);
-
-                // Try to insert into this page
-                if page.insert(key, value) {
-                    // Successfully inserted, update the page
-                    self.store.put_page_bytes(current_page_id, &page.serialize())?;
-                    self.dirty_pages.insert(current_page_id);
-                    return Ok(());
-                }
-                // Page is full, check if there's a next page
-                if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
-                    current_page_id = next_page_id;
-                } else {
-                    // No next page, create a new one
-                    let new_page_id = self.store.allocate_page();
-                    let mut new_page = LeafPage::new(self.store.page_size());
-
-                    // Update the current page to point to the new page
-                    page.set_next_page_id(new_page_id);
-                    self.store.put_page_bytes(current_page_id, &page.serialize())?;
-                    self.dirty_pages.insert(current_page_id);
-
-                    // Update the new page to point back to the current page
-                    new_page.set_prev_page_id(current_page_id);
-
-                    // Insert the key-value pair into the new page
-                    if !new_page.insert(key, value) {
-                        return Err("Failed to insert into new page".into());
-                    }
-
-                    // Save the new page
-                    self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
-                    self.dirty_pages.insert(new_page_id);
-                    return Ok(());
-                }
-            }
+            // Root is not a BranchPage, which is unexpected
+            return Err("Root page is not a BranchPage".into());
         }
     }
 
@@ -332,53 +280,8 @@ impl<S: PageStore> DataTree<S> {
                 return Ok(false);
             }
         } else {
-            // For backward compatibility, handle the case where root is a LeafPage
-            let mut current_page_id = self.root_page_id;
-            loop {
-                let page_bytes = self.store.get_page_bytes(current_page_id)?;
-                let mut page = LeafPage::deserialize(&page_bytes);
-
-                if page.delete(key) {
-                    self.store.put_page_bytes(current_page_id, &page.serialize())?;
-                    self.dirty_pages.insert(current_page_id);
-
-                    // Check if page is empty and not root
-                    if page.metadata().is_empty() && current_page_id != self.root_page_id {
-                        // Get previous and next page IDs
-                        let prev_page_id = page.prev_page_id();
-                        let next_page_id = page.next_page_id();
-
-                        // Update links
-                        if prev_page_id != 0 {
-                            let prev_bytes = self.store.get_page_bytes(prev_page_id)?;
-                            let mut prev_page = LeafPage::deserialize(&prev_bytes);
-                            prev_page.set_next_page_id(next_page_id);
-                            self.store.put_page_bytes(prev_page_id, &prev_page.serialize())?;
-                            self.dirty_pages.insert(prev_page_id);
-                        }
-
-                        if next_page_id != 0 {
-                            let next_bytes = self.store.get_page_bytes(next_page_id)?;
-                            let mut next_page = LeafPage::deserialize(&next_bytes);
-                            next_page.set_prev_page_id(prev_page_id);
-                            self.store.put_page_bytes(next_page_id, &next_page.serialize())?;
-                            self.dirty_pages.insert(next_page_id);
-                        }
-
-                        // Free the empty page
-                        self.store.free_page(current_page_id)?;
-                        self.dirty_pages.remove(&current_page_id);
-                    }
-
-                    return Ok(true);
-                }
-
-                if let Some(next_page_id) = self.store.get_next_page_id(current_page_id) {
-                    current_page_id = next_page_id;
-                } else {
-                    return Ok(false);
-                }
-            }
+            // Root is not a BranchPage, which is unexpected
+            return Err("Root page is not a BranchPage".into());
         }
     }
 
@@ -402,5 +305,5 @@ impl<S: PageStore> DataTree<S> {
     pub fn u64_to_bytes(key: u64) -> [u8; 8] {
         key.to_le_bytes()
     }
-    
+
 }

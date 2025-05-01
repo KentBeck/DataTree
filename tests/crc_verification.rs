@@ -29,19 +29,20 @@ fn test_crc_verification() {
         corrupted_bytes[0] ^= 0xFF; // Flip all bits in the first byte
     }
 
-    // Create a new InMemoryPageStore with the corrupted page
+    // Create a new InMemoryPageStore with a proper DataTree structure
     let mut corrupted_store = InMemoryPageStore::with_page_size(1024);
-    let corrupted_page_id = corrupted_store.allocate_page();
 
-    // Create a corrupted LeafPage
-    let mut corrupted_page = LeafPage::new(1024);
-    corrupted_page.insert(key, &corrupted_bytes);
+    // Create a DataTree with a BranchPage root
+    let mut corrupted_tree = DataTree::new(corrupted_store);
 
-    // Save the corrupted page
-    corrupted_store.put_page_bytes(corrupted_page_id, &corrupted_page.serialize()).unwrap();
+    // Insert the corrupted data
+    corrupted_tree.put(key, &corrupted_bytes).unwrap();
 
-    // Create a DataTree with the corrupted store
-    let corrupted_tree = DataTree::from_existing(corrupted_store, corrupted_page_id);
+    // Get the store back
+    corrupted_store = corrupted_tree.into_store();
+
+    // Create a new DataTree with the store
+    let corrupted_tree = DataTree::new(corrupted_store);
 
     // Try to get the value from the corrupted tree
     // This should not fail because we're not actually corrupting the CRC
