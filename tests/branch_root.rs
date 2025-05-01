@@ -40,32 +40,32 @@ fn test_branch_root_operations() {
     for i in 0..10 {
         let key = 1900 + i as u64;
         let value = format!("value{}", i).into_bytes();
-        tree.put_u64(key, &value).unwrap();
+        tree.put(key, &value).unwrap();
     }
 
     // Retrieve the values
     for i in 0..10 {
         let key = 1900 + i as u64;
-        let value = tree.get_u64(key).unwrap().unwrap();
+        let value = tree.get(key).unwrap().unwrap();
         assert_eq!(value, format!("value{}", i).into_bytes());
     }
 
     // Delete some key-value pairs
     for i in 0..5 {
         let key = 1900 + i as u64;
-        assert!(tree.delete_u64(key).unwrap());
+        assert!(tree.delete(key).unwrap());
     }
 
     // Check that the deleted keys are gone
     for i in 0..5 {
         let key = 1900 + i as u64;
-        assert!(tree.get_u64(key).unwrap().is_none());
+        assert!(tree.get(key).unwrap().is_none());
     }
 
     // Check that the remaining keys are still there
     for i in 5..10 {
         let key = 1900 + i as u64;
-        let value = tree.get_u64(key).unwrap().unwrap();
+        let value = tree.get(key).unwrap().unwrap();
         assert_eq!(value, format!("value{}", i).into_bytes());
     }
 }

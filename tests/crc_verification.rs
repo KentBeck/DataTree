@@ -11,17 +11,17 @@ fn test_crc_verification() {
     // Insert a key-value pair
     let key = 2001;
     let value = b"test_value";
-    tree.put_u64(key, value).unwrap();
+    tree.put(key, value).unwrap();
 
     // Get the value to verify it was stored correctly
-    let retrieved_value = tree.get_u64(key).unwrap().unwrap();
+    let retrieved_value = tree.get(key).unwrap().unwrap();
     assert_eq!(retrieved_value, value);
 
     // Instead of using a custom PageStore, let's directly test the CRC functionality
     // by creating a corrupted page and trying to deserialize it
 
     // Get the page bytes
-    let page_bytes = tree.get_u64(key).unwrap().unwrap();
+    let page_bytes = tree.get(key).unwrap().unwrap();
 
     // Create a corrupted copy of the page bytes
     let mut corrupted_bytes = page_bytes.clone();
@@ -45,7 +45,7 @@ fn test_crc_verification() {
 
     // Try to get the value from the corrupted tree
     // This should not fail because we're not actually corrupting the CRC
-    let result = corrupted_tree.get_u64(key);
+    let result = corrupted_tree.get(key);
     assert!(result.is_ok());
 }
 

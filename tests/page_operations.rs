@@ -20,12 +20,12 @@ fn test_page_splitting() {
 
     // Insert all key-value pairs
     for (key, value) in keys.iter().zip(values.iter()) {
-        tree.put_u64(*key, value).unwrap();
+        tree.put(*key, value).unwrap();
     }
 
     // Verify all data can be retrieved
     for (key, expected_value) in keys.iter().zip(values.iter()) {
-        let retrieved_value = tree.get_u64(*key).unwrap().unwrap();
+        let retrieved_value = tree.get(*key).unwrap().unwrap();
         assert_eq!(retrieved_value, *expected_value);
     }
 
@@ -54,7 +54,7 @@ fn test_page_cleanup_after_deletion() {
 
     // Insert all key-value pairs
     for (key, value) in keys.iter().zip(values.iter()) {
-        tree.put_u64(*key, value).unwrap();
+        tree.put(*key, value).unwrap();
     }
 
     // Get the page count before deletion
@@ -68,7 +68,7 @@ fn test_page_cleanup_after_deletion() {
 
     // Delete all entries
     for key in keys_to_delete {
-        tree.delete_u64(key).unwrap();
+        tree.delete(key).unwrap();
     }
 
     // Verify that the page count has decreased
@@ -80,7 +80,7 @@ fn test_page_cleanup_after_deletion() {
 
     // Verify all keys are gone
     for key in &keys {
-        assert!(tree.get_u64(*key).unwrap().is_none());
+        assert!(tree.get(*key).unwrap().is_none());
     }
 }
 
@@ -91,7 +91,7 @@ fn test_page_type_serialization() {
     let mut tree = DataTree::new(store);
 
     // Insert some data
-    tree.put_u64(1801, b"value1").unwrap();
+    tree.put(1801, b"value1").unwrap();
 
     // Get the page and verify its type
     let store = tree.store();
