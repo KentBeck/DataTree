@@ -34,9 +34,9 @@ fn test_leaf_page_with_single_entry() {
     let mut leaf_page = LeafPage::new(page_size);
 
     // Add a key-value pair
-    let key = 3001u64.to_le_bytes();
+    let key = 3001u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(&key, value));
+    assert!(leaf_page.insert(key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -58,7 +58,7 @@ fn test_leaf_page_with_single_entry() {
     assert_eq!(deserialized.next_page_id, 0);
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(&key).unwrap();
+    let retrieved_value = deserialized.get(key).unwrap();
     assert_eq!(retrieved_value, value);
 }
 
@@ -70,13 +70,13 @@ fn test_leaf_page_with_multiple_entries() {
 
     // Add several key-value pairs
     let entries = vec![
-        (3101u64.to_le_bytes(), b"value1"),
-        (3102u64.to_le_bytes(), b"value2"),
-        (3103u64.to_le_bytes(), b"value3"),
+        (3101u64, b"value1"),
+        (3102u64, b"value2"),
+        (3103u64, b"value3"),
     ];
 
     for (key, value) in &entries {
-        assert!(leaf_page.insert(key, *value));
+        assert!(leaf_page.insert(*key, *value));
     }
 
     // Serialize the page
@@ -100,7 +100,7 @@ fn test_leaf_page_with_multiple_entries() {
 
     // Check that all key-value pairs can be retrieved
     for (key, value) in &entries {
-        let retrieved_value = deserialized.get(key).unwrap();
+        let retrieved_value = deserialized.get(*key).unwrap();
         assert_eq!(retrieved_value, *value);
     }
 }
@@ -118,9 +118,9 @@ fn test_leaf_page_with_linked_pages() {
     leaf_page.set_next_page_id(next_page_id);
 
     // Add a key-value pair
-    let key = 3201u64.to_le_bytes();
+    let key = 3201u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(&key, value));
+    assert!(leaf_page.insert(key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -142,7 +142,7 @@ fn test_leaf_page_with_linked_pages() {
     assert_eq!(deserialized.next_page_id, next_page_id);
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(&key).unwrap();
+    let retrieved_value = deserialized.get(key).unwrap();
     assert_eq!(retrieved_value, value);
 }
 
@@ -153,9 +153,9 @@ fn test_leaf_page_serialization_format() {
     let mut leaf_page = LeafPage::new(page_size);
 
     // Add a key-value pair
-    let key = 3301u64.to_le_bytes();
+    let key = 3301u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(&key, value));
+    assert!(leaf_page.insert(key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -174,7 +174,7 @@ fn test_leaf_page_serialization_format() {
 
     // Next 8 bytes are the used bytes
     let used_bytes = u64::from_le_bytes(serialized[17..25].try_into().unwrap()) as usize;
-    assert_eq!(used_bytes, key.len() + value.len());
+    assert_eq!(used_bytes, value.len()); // Only value is stored in data now
 
     // Next 8 bytes are the prev_page_id
     let prev_page_id = u64::from_le_bytes(serialized[25..33].try_into().unwrap());
@@ -187,18 +187,10 @@ fn test_leaf_page_serialization_format() {
     // The rest of the data contains the metadata entries and the actual data
     // Let's check that the data contains our key and value
     let data_bytes = &serialized[data_start..];
-    assert!(data_bytes.len() >= key.len() + value.len());
+    assert!(data_bytes.len() >= value.len()); // Only value is stored in data now
 
-    // The key and value should be somewhere in the data
-    let mut found_key = false;
+    // Only the value should be in the data (key is stored in metadata)
     let mut found_value = false;
-
-    for i in 0..data_bytes.len() - key.len() + 1 {
-        if &data_bytes[i..i + key.len()] == key {
-            found_key = true;
-            break;
-        }
-    }
 
     for i in 0..data_bytes.len() - value.len() + 1 {
         if &data_bytes[i..i + value.len()] == value {
@@ -207,7 +199,7 @@ fn test_leaf_page_serialization_format() {
         }
     }
 
-    assert!(found_key, "Key not found in serialized data");
+    // No need to check for key as it's stored in metadata
     assert!(found_value, "Value not found in serialized data");
 }
 
@@ -218,11 +210,11 @@ fn test_leaf_page_with_large_data() {
     let mut leaf_page = LeafPage::new(page_size);
 
     // Create a large value (but still small enough to fit in the page)
-    let key = 3401u64.to_le_bytes();
+    let key = 3401u64;
     let value = vec![b'x'; 500]; // 500 bytes of 'x'
 
     // Insert the large value
-    assert!(leaf_page.insert(&key, &value));
+    assert!(leaf_page.insert(key, &value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -242,7 +234,7 @@ fn test_leaf_page_with_large_data() {
     assert!(deserialized.data.len() >= value.len());
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(&key).unwrap();
+    let retrieved_value = deserialized.get(key).unwrap();
     assert_eq!(retrieved_value, value);
 }
 
@@ -266,13 +258,13 @@ fn test_leaf_page_with_max_data() {
     let max_data_size = page_size - overhead;
 
     // Create a key and value that will fill the page
-    let key = 3501u64.to_le_bytes();
-    let key_len = key.len();
-    let value_len = max_data_size - key_len;
+    let key = 3501u64;
+    // No need to subtract key length since it's now a u64 stored in metadata
+    let value_len = max_data_size;
     let value = vec![b'y'; value_len]; // Fill the rest of the page with 'y'
 
     // Insert the large value
-    assert!(leaf_page.insert(&key, &value));
+    assert!(leaf_page.insert(key, &value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -291,6 +283,6 @@ fn test_leaf_page_with_max_data() {
     assert_eq!(deserialized.metadata.len(), 1);
 
     // Check that the key-value pair can be retrieved
-    let retrieved_value = deserialized.get(&key).unwrap();
+    let retrieved_value = deserialized.get(key).unwrap();
     assert_eq!(retrieved_value, value);
 }

@@ -17,13 +17,10 @@ impl Error for KeyNotFoundError {}
 // Metadata for each key-value pair
 #[derive(Debug, Clone, Copy)]
 pub struct LeafPageEntry {
-    pub key_offset: usize,
-    pub key_length: usize,
+    pub key: u64,
     pub value_offset: usize,
     pub value_length: usize,
 }
-
-
 
 // Constants for page header sizes
 pub const PAGE_TYPE_SIZE: usize = 1; // 1 byte for page type
@@ -36,9 +33,9 @@ pub const HEADER_SIZE: usize = PAGE_TYPE_SIZE + COUNT_SIZE + DATA_START_SIZE +
                               USED_BYTES_SIZE + PREV_PAGE_ID_SIZE + NEXT_PAGE_ID_SIZE;
 
 // Constants for metadata entry sizes
-pub const KEY_LENGTH_SIZE: usize = 8; // 8 bytes for key length
+pub const KEY_SIZE: usize = 8; // 8 bytes for u64 key
 pub const VALUE_LENGTH_SIZE: usize = 8; // 8 bytes for value length
-pub const METADATA_ENTRY_SIZE: usize = KEY_LENGTH_SIZE + VALUE_LENGTH_SIZE;
+pub const METADATA_ENTRY_SIZE: usize = KEY_SIZE + VALUE_LENGTH_SIZE;
 
 #[derive(Debug)]
 pub struct LeafPage {
@@ -90,7 +87,7 @@ impl LeafPage {
 
         // Write metadata entries
         for meta in &self.metadata {
-            bytes.extend_from_slice(&(meta.key_length as u64).to_le_bytes());
+            bytes.extend_from_slice(&meta.key.to_le_bytes());
             bytes.extend_from_slice(&(meta.value_length as u64).to_le_bytes());
         }
 
@@ -142,17 +139,16 @@ impl LeafPage {
                 break;
             }
 
-            let key_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
+            let key = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
             offset += 8;
             let value_length = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
             offset += 8;
             metadata.push(LeafPageEntry {
-                key_offset: current_offset,
-                key_length,
-                value_offset: current_offset + key_length,
+                key,
+                value_offset: current_offset,
                 value_length,
             });
-            current_offset += key_length + value_length;
+            current_offset += value_length;
         }
 
         // Read data
@@ -203,23 +199,38 @@ impl LeafPage {
         self.next_page_id = page_id;
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<&[u8]> {
+    // New method that takes a u64 key
+    pub fn get(&self, key: u64) -> Option<&[u8]> {
         // Find the metadata for the key
         for meta in &self.metadata {
-            let meta_key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
-            if meta_key == key {
+            if meta.key == key {
                 return Some(&self.data[meta.value_offset..meta.value_offset + meta.value_length]);
             }
         }
         None
     }
 
-    pub fn insert(&mut self, key: &[u8], value: &[u8]) -> bool {
+    // Method for backward compatibility
+    pub fn get_bytes(&self, key: &[u8]) -> Option<&[u8]> {
+        // Convert byte array to u64
+        let key_u64 = if key.len() >= 8 {
+            u64::from_le_bytes(key[0..8].try_into().unwrap())
+        } else {
+            // Pad with zeros if key is shorter than 8 bytes
+            let mut padded = [0u8; 8];
+            for (i, &b) in key.iter().enumerate() {
+                padded[i] = b;
+            }
+            u64::from_le_bytes(padded)
+        };
+
+        self.get(key_u64)
+    }
+
+    // New method that takes a u64 key
+    pub fn insert(&mut self, key: u64, value: &[u8]) -> bool {
         // Check if key already exists
-        if let Some(pos) = self.metadata.iter().position(|meta| {
-            let meta_key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
-            meta_key == key
-        }) {
+        if let Some(pos) = self.metadata.iter().position(|meta| meta.key == key) {
             // Key exists, update the value
             let old_meta = self.metadata[pos];
             let required_space = if value.len() > old_meta.value_length {
@@ -243,13 +254,11 @@ impl LeafPage {
 
             // Add new data and metadata
             let new_meta = LeafPageEntry {
-                key_offset: self.data.len(),
-                key_length: key.len(),
-                value_offset: self.data.len() + key.len(),
+                key,
+                value_offset: self.data.len(),
                 value_length: value.len(),
             };
 
-            self.data.extend_from_slice(key);
             self.data.extend_from_slice(value);
             self.metadata.push(new_meta);
 
@@ -257,7 +266,7 @@ impl LeafPage {
         }
 
         // Calculate total space needed for new entry
-        let required_space = key.len() + value.len();
+        let required_space = value.len();
         let metadata_size = (self.metadata.len() + 1) * METADATA_ENTRY_SIZE;
         // Using HEADER_SIZE constant instead of magic numbers
         let total_space = self.data.len() + required_space + metadata_size + HEADER_SIZE;
@@ -269,14 +278,12 @@ impl LeafPage {
 
         // Create new metadata
         let new_meta = LeafPageEntry {
-            key_offset: self.data.len(),
-            key_length: key.len(),
-            value_offset: self.data.len() + key.len(),
+            key,
+            value_offset: self.data.len(),
             value_length: value.len(),
         };
 
         // Add the new data
-        self.data.extend_from_slice(key);
         self.data.extend_from_slice(value);
 
         // Add the new metadata
@@ -285,12 +292,27 @@ impl LeafPage {
         true
     }
 
-    pub fn delete(&mut self, key: &[u8]) -> bool {
+    // Method for backward compatibility
+    pub fn insert_bytes(&mut self, key: &[u8], value: &[u8]) -> bool {
+        // Convert byte array to u64
+        let key_u64 = if key.len() >= 8 {
+            u64::from_le_bytes(key[0..8].try_into().unwrap())
+        } else {
+            // Pad with zeros if key is shorter than 8 bytes
+            let mut padded = [0u8; 8];
+            for (i, &b) in key.iter().enumerate() {
+                padded[i] = b;
+            }
+            u64::from_le_bytes(padded)
+        };
+
+        self.insert(key_u64, value)
+    }
+
+    // New method that takes a u64 key
+    pub fn delete(&mut self, key: u64) -> bool {
         // Find and remove the metadata
-        if let Some(pos) = self.metadata.iter().position(|meta| {
-            let meta_key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
-            meta_key == key
-        }) {
+        if let Some(pos) = self.metadata.iter().position(|meta| meta.key == key) {
             self.metadata.remove(pos);
             self.compact_data();
             true
@@ -299,10 +321,27 @@ impl LeafPage {
         }
     }
 
-    pub fn is_full(&self, key: &[u8], value: &[u8]) -> bool {
+    // Method for backward compatibility
+    pub fn delete_bytes(&mut self, key: &[u8]) -> bool {
+        // Convert byte array to u64
+        let key_u64 = if key.len() >= 8 {
+            u64::from_le_bytes(key[0..8].try_into().unwrap())
+        } else {
+            // Pad with zeros if key is shorter than 8 bytes
+            let mut padded = [0u8; 8];
+            for (i, &b) in key.iter().enumerate() {
+                padded[i] = b;
+            }
+            u64::from_le_bytes(padded)
+        };
+
+        self.delete(key_u64)
+    }
+
+    pub fn is_full(&self, value: &[u8]) -> bool {
         // Calculate space needed for new entry
         let new_metadata_size = std::mem::size_of::<LeafPageEntry>();
-        let new_data_size = key.len() + value.len();
+        let new_data_size = value.len();
 
         // Calculate current space used
         let current_metadata_size = self.metadata.len() * std::mem::size_of::<LeafPageEntry>();
@@ -314,17 +353,18 @@ impl LeafPage {
         current_metadata_size + current_data_size + new_metadata_size + new_data_size + HEADER_SIZE > self.page_size
     }
 
+    // Method for backward compatibility
+    pub fn is_full_bytes(&self, _key: &[u8], value: &[u8]) -> bool {
+        self.is_full(value)
+    }
+
     pub fn split(&mut self) -> Option<LeafPage> {
         if self.metadata.len() < 2 {
             return None;
         }
 
         // Sort metadata by key for consistent splitting
-        self.metadata.sort_by(|a, b| {
-            let a_key = &self.data[a.key_offset..a.key_offset + a.key_length];
-            let b_key = &self.data[b.key_offset..b.key_offset + b.key_length];
-            a_key.cmp(b_key)
-        });
+        self.metadata.sort_by(|a, b| a.key.cmp(&b.key));
 
         // Calculate split point
         let split_point = self.metadata.len() / 2;
@@ -336,7 +376,7 @@ impl LeafPage {
         // First pass: collect all data
         let mut all_data = Vec::new();
         for meta in &self.metadata {
-            let key = self.data[meta.key_offset..meta.key_offset + meta.key_length].to_vec();
+            let key = meta.key;
             let value = self.data[meta.value_offset..meta.value_offset + meta.value_length].to_vec();
             all_data.push((key, value));
         }
@@ -352,23 +392,19 @@ impl LeafPage {
             if i < split_point {
                 // Keep in current page
                 let new_meta = LeafPageEntry {
-                    key_offset: self.data.len(),
-                    key_length: key.len(),
-                    value_offset: self.data.len() + key.len(),
+                    key,
+                    value_offset: self.data.len(),
                     value_length: value.len(),
                 };
-                self.data.extend_from_slice(&key);
                 self.data.extend_from_slice(&value);
                 self.metadata.push(new_meta);
             } else {
                 // Move to new page
                 let new_meta = LeafPageEntry {
-                    key_offset: new_data.len(),
-                    key_length: key.len(),
-                    value_offset: new_data.len() + key.len(),
+                    key,
+                    value_offset: new_data.len(),
                     value_length: value.len(),
                 };
-                new_data.extend_from_slice(&key);
                 new_data.extend_from_slice(&value);
                 new_metadata.push(new_meta);
             }
@@ -398,25 +434,22 @@ impl LeafPage {
             return;
         }
 
-        // Sort metadata by key_offset
-        self.metadata.sort_by_key(|m| m.key_offset);
+        // Sort metadata by key
+        self.metadata.sort_by_key(|m| m.key);
 
         // Rebuild data
         let mut new_data = Vec::new();
         let mut new_metadata = Vec::new();
 
         for meta in &self.metadata {
-            let key = &self.data[meta.key_offset..meta.key_offset + meta.key_length];
             let value = &self.data[meta.value_offset..meta.value_offset + meta.value_length];
 
             let new_meta = LeafPageEntry {
-                key_offset: new_data.len(),
-                key_length: meta.key_length,
-                value_offset: new_data.len() + meta.key_length,
+                key: meta.key,
+                value_offset: new_data.len(),
                 value_length: meta.value_length,
             };
 
-            new_data.extend_from_slice(key);
             new_data.extend_from_slice(value);
             new_metadata.push(new_meta);
         }
@@ -426,10 +459,9 @@ impl LeafPage {
     }
 
     pub fn max_value_size(&self) -> usize {
-        // Reserve space for metadata and key
+        // Reserve space for metadata
         let metadata_overhead = 32; // 16 bytes for metadata entry + buffer
-        let key_overhead = 32; // Reasonable buffer for key size
-        self.page_size - metadata_overhead - key_overhead
+        self.page_size - metadata_overhead
     }
 
     pub fn is_value_too_large(&self, value: &[u8]) -> bool {
