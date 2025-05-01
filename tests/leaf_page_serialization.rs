@@ -36,7 +36,7 @@ fn test_leaf_page_with_single_entry() {
     // Add a key-value pair
     let key = 3001u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.put(key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -76,7 +76,7 @@ fn test_leaf_page_with_multiple_entries() {
     ];
 
     for (key, value) in &entries {
-        assert!(leaf_page.insert(*key, *value));
+        assert!(leaf_page.put(*key, *value));
     }
 
     // Serialize the page
@@ -120,7 +120,7 @@ fn test_leaf_page_with_linked_pages() {
     // Add a key-value pair
     let key = 3201u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.put(key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -155,7 +155,7 @@ fn test_leaf_page_serialization_format() {
     // Add a key-value pair
     let key = 3301u64;
     let value = b"test_value";
-    assert!(leaf_page.insert(key, value));
+    assert!(leaf_page.put(key, value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -214,7 +214,7 @@ fn test_leaf_page_with_large_data() {
     let value = vec![b'x'; 500]; // 500 bytes of 'x'
 
     // Insert the large value
-    assert!(leaf_page.insert(key, &value));
+    assert!(leaf_page.put(key, &value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();
@@ -264,7 +264,7 @@ fn test_leaf_page_with_max_data() {
     let value = vec![b'y'; value_len]; // Fill the rest of the page with 'y'
 
     // Insert the large value
-    assert!(leaf_page.insert(key, &value));
+    assert!(leaf_page.put(key, &value));
 
     // Serialize the page
     let serialized = leaf_page.serialize();

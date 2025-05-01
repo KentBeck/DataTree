@@ -58,8 +58,8 @@ fn test_crc_verification_on_serialization() {
     // Add some data
     let key1 = 2101u64;
     let key2 = 2102u64;
-    leaf_page.insert(key1, b"value1");
-    leaf_page.insert(key2, b"value2");
+    leaf_page.put(key1, b"value1");
+    leaf_page.put(key2, b"value2");
 
     // Serialize the page
     let serialized = leaf_page.serialize();

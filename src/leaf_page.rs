@@ -211,7 +211,7 @@ impl LeafPage {
     }
     
     // New method that takes a u64 key
-    pub fn insert(&mut self, key: u64, value: &[u8]) -> bool {
+    pub fn put(&mut self, key: u64, value: &[u8]) -> bool {
         // Check if key already exists
         if let Some(pos) = self.metadata.iter().position(|meta| meta.key == key) {
             // Key exists, update the value

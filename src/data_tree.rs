@@ -170,7 +170,7 @@ impl<S: PageStore> DataTree<S> {
                     let mut page = LeafPage::deserialize(&page_bytes);
 
                     // Try to insert into this page
-                    if page.insert(key, value) {
+                    if page.put(key, value) {
                         // Successfully inserted, update the page
                         self.store.put_page_bytes(current_page_id, &page.serialize())?;
                         self.dirty_pages.insert(current_page_id);
@@ -194,7 +194,7 @@ impl<S: PageStore> DataTree<S> {
                         new_page.set_prev_page_id(current_page_id);
 
                         // Insert the key-value pair into the new page
-                        if !new_page.insert(key, value) {
+                        if !new_page.put(key, value) {
                             return Err("Failed to insert into new page".into());
                         }
 
