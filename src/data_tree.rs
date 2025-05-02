@@ -21,7 +21,7 @@ impl Error for KeyNotFoundError {}
 pub enum PageType {
     LeafPage = 1,
     BranchPage = 2,
-    RleLeafPage = 3,
+    RLELeafPage = 3,
     // Future page types will be added here
 }
 
@@ -30,7 +30,7 @@ impl PageType {
         match value {
             1 => Some(PageType::LeafPage),
             2 => Some(PageType::BranchPage),
-            3 => Some(PageType::RleLeafPage),
+            3 => Some(PageType::RLELeafPage),
             _ => None,
         }
     }

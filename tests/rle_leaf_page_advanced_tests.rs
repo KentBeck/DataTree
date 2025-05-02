@@ -311,7 +311,7 @@ fn test_rle_leaf_page_serialization_format() {
 
     // Check the format of the serialized data
     // First byte is the page type
-    assert_eq!(serialized[0], PageType::RleLeafPage.to_u8());
+    assert_eq!(serialized[0], PageType::RLELeafPage.to_u8());
 
     // Next 8 bytes are the metadata count (1 in this case)
     let metadata_count = u64::from_le_bytes(serialized[1..9].try_into().unwrap());
