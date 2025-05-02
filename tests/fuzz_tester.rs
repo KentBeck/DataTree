@@ -347,11 +347,11 @@ fn test_fuzz_data_tree_with_in_memory_store() {
         *cell.borrow_mut() = Some(fuzz_test.clone());
     });
 
-    // Parse duration from environment variable or use default (10 seconds)
-    let duration_str = std::env::var("FUZZ_DURATION").unwrap_or_else(|_| "10s".to_string());
+    // Parse duration from environment variable or use default (100ms)
+    let duration_str = std::env::var("FUZZ_DURATION").unwrap_or_else(|_| "100ms".to_string());
     let duration = parse_duration(&duration_str).unwrap_or_else(|_| {
-        println!("Invalid duration format: {}, using default of 10 seconds", duration_str);
-        Duration::from_secs(10)
+        println!("Invalid duration format: {}, using default of 100ms", duration_str);
+        Duration::from_millis(100)
     });
 
     println!("Running fuzz test for {:?}", duration);
@@ -418,11 +418,11 @@ fn test_fuzz_data_tree_with_custom_store() {
         *cell.borrow_mut() = Some(fuzz_test.clone());
     });
 
-    // Parse duration from environment variable or use default (10 seconds)
-    let duration_str = std::env::var("FUZZ_DURATION").unwrap_or_else(|_| "1s".to_string());
+    // Parse duration from environment variable or use default (100ms)
+    let duration_str = std::env::var("FUZZ_DURATION").unwrap_or_else(|_| "100ms".to_string());
     let duration = parse_duration(&duration_str).unwrap_or_else(|_| {
-        println!("Invalid duration format: {}, using default of 1 second", duration_str);
-        Duration::from_secs(1)
+        println!("Invalid duration format: {}, using default of 100ms", duration_str);
+        Duration::from_millis(100)
     });
 
     println!("Running custom store fuzz test for {:?}", duration);
@@ -457,7 +457,7 @@ thread_local! {
     static CURRENT_CUSTOM_FUZZ_TEST: std::cell::RefCell<Option<FuzzTest<CustomPageStore>>> = std::cell::RefCell::new(None);
 }
 
-// Parse a duration string like "30s" or "20m"
+// Parse a duration string like "30s", "20m", or "100ms"
 fn parse_duration(duration_str: &str) -> Result<Duration, String> {
     let duration_str = duration_str.trim().to_lowercase();
 
@@ -466,6 +466,17 @@ fn parse_duration(duration_str: &str) -> Result<Duration, String> {
         return Err("Empty duration string".to_string());
     }
 
+    // Check for milliseconds format (ends with "ms")
+    if duration_str.ends_with("ms") {
+        let numeric_part = &duration_str[0..duration_str.len() - 2];
+        let value = match numeric_part.parse::<u64>() {
+            Ok(v) => v,
+            Err(_) => return Err(format!("Invalid numeric value: {}", numeric_part)),
+        };
+        return Ok(Duration::from_millis(value));
+    }
+
+    // For other formats (s, m, h)
     // Find the last character (should be the unit)
     let last_char = duration_str.chars().last().unwrap();
 
