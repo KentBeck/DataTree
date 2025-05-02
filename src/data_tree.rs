@@ -1,8 +1,21 @@
 use std::collections::HashSet;
 use std::error::Error;
+use std::fmt;
 use crate::leaf_page::LeafPage;
 use crate::branch_page::BranchPage;
 use crate::page_store::PageStore;
+
+// Define a custom error type for when a key is not found
+#[derive(Debug)]
+pub struct KeyNotFoundError;
+
+impl fmt::Display for KeyNotFoundError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Key not found in page")
+    }
+}
+
+impl Error for KeyNotFoundError {}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PageType {
