@@ -309,13 +309,6 @@ impl PageStore for CustomPageStore {
     }
 }
 
-// Helper function to run a fuzz test with any PageStore implementation
-#[allow(dead_code)]
-fn run_fuzz_test_with_store<S: PageStore + Clone + 'static>(store: S, duration: Duration) -> Result<(), String> {
-    let mut fuzz_test = FuzzTest::new(store);
-    fuzz_test.run(duration)
-}
-
 #[test]
 fn test_fuzz_data_tree_with_in_memory_store() {
     // Set up panic hook to save operations on failure
