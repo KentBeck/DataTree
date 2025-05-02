@@ -1,6 +1,7 @@
 use data_tree::DataTree;
 use data_tree::page_store::{PageStore, InMemoryPageStore};
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::panic;
@@ -16,22 +17,17 @@ enum Operation {
 }
 
 // Struct to hold the test state
-struct FuzzTest {
-    tree: DataTree<InMemoryPageStore>,
+struct FuzzTest<S: PageStore> {
+    tree: DataTree<S>,
     operations: Vec<Operation>,
     expected_data: HashMap<u64, Vec<u8>>,
     rng: StdRng,
 }
 
-impl FuzzTest {
-    // Create a new fuzz test with a random page size
-    fn new() -> Self {
-        let mut rng = StdRng::from_entropy();
-
-        // Generate a random page size between 1024 and 4096 bytes
-        let page_size = rng.gen_range(1024..=4096);
-
-        let store = InMemoryPageStore::with_page_size(page_size);
+impl<S: PageStore + 'static> FuzzTest<S> {
+    // Create a new fuzz test with the provided page store
+    fn new(store: S) -> Self {
+        let rng = StdRng::from_entropy();
         let tree = DataTree::new(store);
 
         FuzzTest {
@@ -244,8 +240,83 @@ impl FuzzTest {
     }
 }
 
+// A custom PageStore implementation that wraps InMemoryPageStore
+struct CustomPageStore {
+    inner: InMemoryPageStore,
+}
+
+impl Clone for CustomPageStore {
+    fn clone(&self) -> Self {
+        // Create a new InMemoryPageStore with the same page size
+        let page_size = self.inner.page_size();
+        Self {
+            inner: InMemoryPageStore::with_page_size(page_size),
+        }
+    }
+}
+
+impl CustomPageStore {
+    fn new(page_size: usize) -> Self {
+        Self {
+            inner: InMemoryPageStore::with_page_size(page_size),
+        }
+    }
+}
+
+impl PageStore for CustomPageStore {
+    fn get_page_bytes(&self, page_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+        self.inner.get_page_bytes(page_id)
+    }
+
+    fn put_page_bytes(&mut self, page_id: u64, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+        self.inner.put_page_bytes(page_id, bytes)
+    }
+
+    fn allocate_page(&mut self) -> u64 {
+        self.inner.allocate_page()
+    }
+
+    fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+        self.inner.flush()
+    }
+
+    fn page_size(&self) -> usize {
+        self.inner.page_size()
+    }
+
+    fn get_next_page_id(&self, page_id: u64) -> Option<u64> {
+        self.inner.get_next_page_id(page_id)
+    }
+
+    fn get_prev_page_id(&self, page_id: u64) -> Option<u64> {
+        self.inner.get_prev_page_id(page_id)
+    }
+
+    fn link_pages(&mut self, prev_page_id: u64, next_page_id: u64) -> Result<(), Box<dyn Error>> {
+        self.inner.link_pages(prev_page_id, next_page_id)
+    }
+
+    fn page_exists(&self, page_id: u64) -> bool {
+        self.inner.page_exists(page_id)
+    }
+
+    fn free_page(&mut self, page_id: u64) -> Result<(), Box<dyn Error>> {
+        self.inner.free_page(page_id)
+    }
+
+    fn get_page_count(&self) -> usize {
+        self.inner.get_page_count()
+    }
+}
+
+// Helper function to run a fuzz test with any PageStore implementation
+fn run_fuzz_test_with_store<S: PageStore + Clone + 'static>(store: S, duration: Duration) -> Result<(), String> {
+    let mut fuzz_test = FuzzTest::new(store);
+    fuzz_test.run(duration)
+}
+
 #[test]
-fn test_fuzz_data_tree() {
+fn test_fuzz_data_tree_with_in_memory_store() {
     // Set up panic hook to save operations on failure
     let old_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -267,8 +338,15 @@ fn test_fuzz_data_tree() {
         old_hook(panic_info);
     }));
 
+    // Create a random page size between 1024 and 4096 bytes
+    let mut rng = StdRng::from_entropy();
+    let page_size = rng.gen_range(1024..=4096);
+
+    // Create an InMemoryPageStore with the random page size
+    let store = InMemoryPageStore::with_page_size(page_size);
+
     // Create and run the fuzz test
-    let mut fuzz_test = FuzzTest::new();
+    let mut fuzz_test = FuzzTest::new(store);
 
     // Store the fuzz test in thread local storage for the panic hook
     CURRENT_FUZZ_TEST.with(|cell| {
@@ -308,9 +386,81 @@ fn test_fuzz_data_tree() {
     });
 }
 
+#[test]
+fn test_fuzz_data_tree_with_custom_store() {
+    // Set up panic hook to save operations on failure
+    let old_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        if let Some(fuzz_test) = CURRENT_CUSTOM_FUZZ_TEST.with(|cell| cell.borrow().clone()) {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            let filename = format!("fuzz_failure_custom_{}.log", timestamp);
+            if let Err(e) = fuzz_test.save_operations(&filename) {
+                eprintln!("Failed to save operations: {}", e);
+            } else {
+                eprintln!("Saved failing operations to {}", filename);
+            }
+        }
+
+        // Call the original panic hook
+        old_hook(panic_info);
+    }));
+
+    // Create a random page size between 1024 and 4096 bytes
+    let mut rng = StdRng::from_entropy();
+    let page_size = rng.gen_range(1024..=4096);
+
+    // Create a CustomPageStore with the random page size
+    let store = CustomPageStore::new(page_size);
+
+    // Create and run the fuzz test
+    let mut fuzz_test = FuzzTest::new(store);
+
+    // Store the fuzz test in thread local storage for the panic hook
+    CURRENT_CUSTOM_FUZZ_TEST.with(|cell| {
+        *cell.borrow_mut() = Some(fuzz_test.clone());
+    });
+
+    // Parse duration from environment variable or use default (10 seconds)
+    let duration_str = std::env::var("FUZZ_DURATION").unwrap_or_else(|_| "1s".to_string());
+    let duration = parse_duration(&duration_str).unwrap_or_else(|_| {
+        println!("Invalid duration format: {}, using default of 1 second", duration_str);
+        Duration::from_secs(1)
+    });
+
+    println!("Running custom store fuzz test for {:?}", duration);
+
+    // Run the fuzz test for the specified duration
+    if let Err(e) = fuzz_test.run(duration) {
+        // Save operations on error
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let filename = format!("fuzz_failure_custom_{}.log", timestamp);
+        if let Err(save_err) = fuzz_test.save_operations(&filename) {
+            eprintln!("Failed to save operations: {}", save_err);
+        } else {
+            eprintln!("Saved failing operations to {}", filename);
+        }
+
+        panic!("Fuzz test failed: {}", e);
+    }
+
+    // Clean up
+    CURRENT_CUSTOM_FUZZ_TEST.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+}
+
 // Thread local storage for the current fuzz test
 thread_local! {
-    static CURRENT_FUZZ_TEST: std::cell::RefCell<Option<FuzzTest>> = std::cell::RefCell::new(None);
+    static CURRENT_FUZZ_TEST: std::cell::RefCell<Option<FuzzTest<InMemoryPageStore>>> = std::cell::RefCell::new(None);
+    static CURRENT_CUSTOM_FUZZ_TEST: std::cell::RefCell<Option<FuzzTest<CustomPageStore>>> = std::cell::RefCell::new(None);
 }
 
 // Parse a duration string like "30s" or "20m"
@@ -341,12 +491,30 @@ fn parse_duration(duration_str: &str) -> Result<Duration, String> {
     }
 }
 
-// Implement Clone for FuzzTest
-impl Clone for FuzzTest {
+// Implement Clone for FuzzTest with InMemoryPageStore
+impl Clone for FuzzTest<InMemoryPageStore> {
     fn clone(&self) -> Self {
         // Create a new DataTree with the same page size
         let page_size = self.tree.store().page_size();
         let store = InMemoryPageStore::with_page_size(page_size);
+        let tree = DataTree::new(store);
+
+        // Create a new FuzzTest with the same operations and expected data
+        FuzzTest {
+            tree,
+            operations: self.operations.clone(),
+            expected_data: self.expected_data.clone(),
+            rng: StdRng::from_entropy(), // Create a new RNG
+        }
+    }
+}
+
+// Implement Clone for FuzzTest with CustomPageStore
+impl Clone for FuzzTest<CustomPageStore> {
+    fn clone(&self) -> Self {
+        // Create a new DataTree with the same page size
+        let page_size = self.tree.store().page_size();
+        let store = CustomPageStore::new(page_size);
         let tree = DataTree::new(store);
 
         // Create a new FuzzTest with the same operations and expected data
