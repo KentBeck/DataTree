@@ -7,6 +7,15 @@ use std::io::Write;
 use std::panic;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use rand::prelude::*;
+use rand::seq::SliceRandom;
+
+// Define the operation types
+#[derive(Debug, Clone, Copy)]
+enum OperationType {
+    Put,
+    Delete,
+    Get,
+}
 
 // Define the operations we'll perform
 #[derive(Debug, Clone)]
@@ -64,10 +73,11 @@ impl<S: PageStore + 'static> FuzzTest<S> {
     // Perform a random operation
     fn random_operation(&mut self) -> Operation {
         // Decide which operation to perform
-        let op_type = self.rng.gen_range(0..=2);
+        let op_types = [OperationType::Put, OperationType::Delete, OperationType::Get];
+        let op_type = *op_types.choose(&mut self.rng).unwrap();
 
         match op_type {
-            0 => {
+            OperationType::Put => {
                 // Put operation
                 let key = self.random_key();
                 let value = self.random_value();
@@ -76,7 +86,7 @@ impl<S: PageStore + 'static> FuzzTest<S> {
                     value
                 }
             },
-            1 => {
+            OperationType::Delete => {
                 // Delete operation
                 if let Some(key) = self.random_existing_key() {
                     Operation::Delete { key }
@@ -90,7 +100,7 @@ impl<S: PageStore + 'static> FuzzTest<S> {
                     }
                 }
             },
-            2 => {
+            OperationType::Get => {
                 // Get operation
                 if let Some(key) = self.random_existing_key() {
                     Operation::Get { key }
@@ -104,7 +114,6 @@ impl<S: PageStore + 'static> FuzzTest<S> {
                     }
                 }
             },
-            _ => unreachable!(),
         }
     }
 
