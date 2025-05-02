@@ -250,6 +250,7 @@ impl<S: PageStore + 'static> FuzzTest<S> {
 }
 
 // A custom PageStore implementation that wraps InMemoryPageStore
+// Here to ensure that the fuzz test works with any PageStore implementation
 struct CustomPageStore {
     inner: InMemoryPageStore,
 }
