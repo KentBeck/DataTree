@@ -1,4 +1,5 @@
 use data_tree::DataTree;
+use data_tree::branch_page::BranchPage;
 use data_tree::page_store::{PageStore, InMemoryPageStore};
 use std::collections::HashMap;
 use std::error::Error;
@@ -191,6 +192,9 @@ impl<S: PageStore + 'static> FuzzTest<S> {
 
         println!("Completed {} operations in {:?}", operation_count, start_time.elapsed());
 
+        // Reload the tree from serialized pages to ensure serialization works correctly
+        // This is implemented by specific store types, so we don't call it here
+
         // Verify all keys in our expected state
         for (key, expected_value) in &self.expected_data {
             match self.tree.get(*key) {
@@ -219,6 +223,9 @@ impl<S: PageStore + 'static> FuzzTest<S> {
 
         Ok(())
     }
+
+    // Reload the tree from serialized pages to ensure serialization works correctly
+    // This is implemented by specific store types
 
     // Save the sequence of operations to a file for replay
     fn save_operations(&self, filename: &str) -> std::io::Result<()> {
@@ -384,6 +391,11 @@ fn test_fuzz_data_tree_with_in_memory_store() {
         panic!("Fuzz test failed: {}", e);
     }
 
+    // Reload the tree from serialized pages to ensure serialization works correctly
+    if let Err(e) = fuzz_test.reload_tree_from_serialized_pages() {
+        panic!("Fuzz test failed after reloading: {}", e);
+    }
+
     // Clean up
     CURRENT_FUZZ_TEST.with(|cell| {
         *cell.borrow_mut() = None;
@@ -455,6 +467,11 @@ fn test_fuzz_data_tree_with_custom_store() {
         panic!("Fuzz test failed: {}", e);
     }
 
+    // Reload the tree from serialized pages to ensure serialization works correctly
+    if let Err(e) = fuzz_test.reload_tree_from_serialized_pages() {
+        panic!("Fuzz test failed after reloading: {}", e);
+    }
+
     // Clean up
     CURRENT_CUSTOM_FUZZ_TEST.with(|cell| {
         *cell.borrow_mut() = None;
@@ -506,6 +523,78 @@ fn parse_duration(duration_str: &str) -> Result<Duration, String> {
     }
 }
 
+// Implement reload_tree_from_serialized_pages for FuzzTest with InMemoryPageStore
+impl FuzzTest<InMemoryPageStore> {
+    fn reload_tree_from_serialized_pages(&mut self) -> Result<(), String> {
+        println!("Reloading tree from serialized pages...");
+
+        // Get the root page ID
+        let root_page_id = self.tree.root_page_id();
+        // Get the current store
+        let store = self.tree.store();
+        let page_size = store.page_size();
+
+        // Create a new store with the same page size
+        let mut new_store = InMemoryPageStore::with_page_size(page_size);
+
+        // Get all page IDs from the original store
+        let mut page_ids = Vec::new();
+        let current_id = root_page_id;
+        page_ids.push(current_id);
+
+        // Collect all page IDs by traversing the tree
+        // First, get all pages linked from the root page
+        if let Ok(root_bytes) = store.get_page_bytes(root_page_id) {
+            // Check if it's a branch page
+            if root_bytes.len() > 0 && root_bytes[0] == 2 { // 2 is PageType::BranchPage
+                // It's a branch page, get all leaf pages it points to
+                let branch_page = BranchPage::deserialize(&root_bytes);
+                for entry in branch_page.entries() {
+                    page_ids.push(entry.page_id);
+
+                    // For each leaf page, follow its chain
+                    let mut leaf_id = entry.page_id;
+                    while let Some(next_id) = store.get_next_page_id(leaf_id) {
+                        if !page_ids.contains(&next_id) {
+                            page_ids.push(next_id);
+                        }
+                        leaf_id = next_id;
+                    }
+                }
+            }
+        } else {
+            return Err("Failed to get root page bytes".to_string());
+        }
+
+        // Copy all pages to the new store
+        for page_id in &page_ids {
+            match store.get_page_bytes(*page_id) {
+                Ok(bytes) => {
+                    // Allocate a page with the same ID in the new store
+                    while new_store.allocate_page() < *page_id {}
+
+                    // Put the serialized page bytes into the new store
+                    if let Err(e) = new_store.put_page_bytes(*page_id, &bytes) {
+                        return Err(format!("Failed to put page bytes: {}", e));
+                    }
+                },
+                Err(e) => {
+                    return Err(format!("Failed to get page bytes: {}", e));
+                }
+            }
+        }
+
+        // Create a new DataTree with the new store
+        let new_tree = DataTree::from_existing(new_store, root_page_id);
+
+        // Replace the old tree with the new one
+        self.tree = new_tree;
+
+        println!("Successfully reloaded tree from serialized pages.");
+        Ok(())
+    }
+}
+
 // Implement Clone for FuzzTest with InMemoryPageStore
 impl Clone for FuzzTest<InMemoryPageStore> {
     fn clone(&self) -> Self {
@@ -521,6 +610,78 @@ impl Clone for FuzzTest<InMemoryPageStore> {
             expected_data: self.expected_data.clone(),
             rng: StdRng::from_entropy(), // Create a new RNG
         }
+    }
+}
+
+// Implement reload_tree_from_serialized_pages for FuzzTest with CustomPageStore
+impl FuzzTest<CustomPageStore> {
+    fn reload_tree_from_serialized_pages(&mut self) -> Result<(), String> {
+        println!("Reloading tree from serialized pages...");
+
+        // Get the root page ID
+        let root_page_id = self.tree.root_page_id();
+        // Get the current store
+        let store = self.tree.store();
+        let page_size = store.page_size();
+
+        // Create a new store with the same page size
+        let mut new_store = CustomPageStore::new(page_size);
+
+        // Get all page IDs from the original store
+        let mut page_ids = Vec::new();
+        let current_id = root_page_id;
+        page_ids.push(current_id);
+
+        // Collect all page IDs by traversing the tree
+        // First, get all pages linked from the root page
+        if let Ok(root_bytes) = store.get_page_bytes(root_page_id) {
+            // Check if it's a branch page
+            if root_bytes.len() > 0 && root_bytes[0] == 2 { // 2 is PageType::BranchPage
+                // It's a branch page, get all leaf pages it points to
+                let branch_page = BranchPage::deserialize(&root_bytes);
+                for entry in branch_page.entries() {
+                    page_ids.push(entry.page_id);
+
+                    // For each leaf page, follow its chain
+                    let mut leaf_id = entry.page_id;
+                    while let Some(next_id) = store.get_next_page_id(leaf_id) {
+                        if !page_ids.contains(&next_id) {
+                            page_ids.push(next_id);
+                        }
+                        leaf_id = next_id;
+                    }
+                }
+            }
+        } else {
+            return Err("Failed to get root page bytes".to_string());
+        }
+
+        // Copy all pages to the new store
+        for page_id in &page_ids {
+            match store.get_page_bytes(*page_id) {
+                Ok(bytes) => {
+                    // Allocate a page with the same ID in the new store
+                    while new_store.allocate_page() < *page_id {}
+
+                    // Put the serialized page bytes into the new store
+                    if let Err(e) = new_store.put_page_bytes(*page_id, &bytes) {
+                        return Err(format!("Failed to put page bytes: {}", e));
+                    }
+                },
+                Err(e) => {
+                    return Err(format!("Failed to get page bytes: {}", e));
+                }
+            }
+        }
+
+        // Create a new DataTree with the new store
+        let new_tree = DataTree::from_existing(new_store, root_page_id);
+
+        // Replace the old tree with the new one
+        self.tree = new_tree;
+
+        println!("Successfully reloaded tree from serialized pages.");
+        Ok(())
     }
 }
 
