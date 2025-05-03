@@ -43,7 +43,6 @@ impl PageType {
 pub struct DataTree<S: PageStore> {
     store: S,
     root_page_id: u64,
-    dirty_pages: HashSet<u64>, // Track which pages have been modified
 }
 
 impl<S: PageStore> DataTree<S> {
@@ -68,18 +67,16 @@ impl<S: PageStore> DataTree<S> {
         DataTree {
             store,
             root_page_id,
-            dirty_pages: HashSet::new(),
         }
     }
 
     pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
-        self.dirty_pages.clear();
-        Ok(())
+        self.store.flush()
     }
 
     /// Returns a reference to the set of dirty page IDs
     pub fn dirty_pages(&self) -> &HashSet<u64> {
-        &self.dirty_pages
+        self.store.dirty_pages()
     }
 
     /// Returns a reference to the store
@@ -106,7 +103,6 @@ impl<S: PageStore> DataTree<S> {
         DataTree {
             store,
             root_page_id,
-            dirty_pages: HashSet::new(),
         }
     }
 
@@ -205,7 +201,7 @@ impl<S: PageStore> DataTree<S> {
             if page.put(key, value) {
                 // Successfully inserted, update the page
                 self.store.put_page_bytes(current_page_id, &page.serialize())?;
-                self.dirty_pages.insert(current_page_id);
+                // Page is automatically marked as dirty in put_page_bytes
                 return Ok(());
             }
 
@@ -220,7 +216,7 @@ impl<S: PageStore> DataTree<S> {
                 // Update the current page to point to the new page
                 page.set_next_page_id(new_page_id);
                 self.store.put_page_bytes(current_page_id, &page.serialize())?;
-                self.dirty_pages.insert(current_page_id);
+                // Page is automatically marked as dirty in put_page_bytes
 
                 // Update the new page to point back to the current page
                 new_page.set_prev_page_id(current_page_id);
@@ -232,7 +228,7 @@ impl<S: PageStore> DataTree<S> {
 
                 // Save the new page
                 self.store.put_page_bytes(new_page_id, &new_page.serialize())?;
-                self.dirty_pages.insert(new_page_id);
+                // Page is automatically marked as dirty in put_page_bytes
                 return Ok(());
             }
         }
@@ -274,7 +270,7 @@ impl<S: PageStore> DataTree<S> {
 
             if page.delete(key) {
                 self.store.put_page_bytes(current_page_id, &page.serialize())?;
-                self.dirty_pages.insert(current_page_id);
+                // Page is automatically marked as dirty in put_page_bytes
 
                 // Check if page is empty and not root
                 if page.metadata().is_empty() && current_page_id != self.root_page_id {
@@ -288,7 +284,7 @@ impl<S: PageStore> DataTree<S> {
                         let mut prev_page = LeafPage::deserialize(&prev_bytes);
                         prev_page.set_next_page_id(next_page_id);
                         self.store.put_page_bytes(prev_page_id, &prev_page.serialize())?;
-                        self.dirty_pages.insert(prev_page_id);
+                        // Page is automatically marked as dirty in put_page_bytes
                     }
 
                     if next_page_id != 0 {
@@ -296,12 +292,12 @@ impl<S: PageStore> DataTree<S> {
                         let mut next_page = LeafPage::deserialize(&next_bytes);
                         next_page.set_prev_page_id(prev_page_id);
                         self.store.put_page_bytes(next_page_id, &next_page.serialize())?;
-                        self.dirty_pages.insert(next_page_id);
+                        // Page is automatically marked as dirty in put_page_bytes
                     }
 
                     // Free the empty page
                     self.store.free_page(current_page_id)?;
-                    self.dirty_pages.remove(&current_page_id);
+                    // Page is automatically removed from dirty pages in free_page
                 }
 
                 return Ok(true);

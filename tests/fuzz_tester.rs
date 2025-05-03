@@ -1,7 +1,7 @@
 use data_tree::DataTree;
 use data_tree::branch_page::BranchPage;
 use data_tree::page_store::{PageStore, InMemoryPageStore};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
@@ -323,6 +323,18 @@ impl PageStore for CustomPageStore {
 
     fn get_page_count(&self) -> usize {
         self.inner.get_page_count()
+    }
+
+    fn mark_page_dirty(&mut self, page_id: u64) {
+        self.inner.mark_page_dirty(page_id);
+    }
+
+    fn dirty_pages(&self) -> &HashSet<u64> {
+        self.inner.dirty_pages()
+    }
+
+    fn clear_dirty_pages(&mut self) {
+        self.inner.clear_dirty_pages();
     }
 }
 

@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::leaf_page::LeafPage;
 use crc::{Crc, CRC_32_ISCSI};
 
@@ -32,6 +32,11 @@ pub trait PageStore {
     fn page_exists(&self, page_id: u64) -> bool;
     fn free_page(&mut self, page_id: u64) -> Result<(), Box<dyn Error>>;
     fn get_page_count(&self) -> usize;
+
+    // Methods for tracking dirty pages
+    fn mark_page_dirty(&mut self, page_id: u64);
+    fn dirty_pages(&self) -> &HashSet<u64>;
+    fn clear_dirty_pages(&mut self);
 }
 
 // In-memory implementation of PageStore for testing
@@ -39,6 +44,7 @@ pub struct InMemoryPageStore {
     pages: HashMap<u64, Vec<u8>>,
     next_page_id: u64,
     page_size: usize,
+    dirty_pages: HashSet<u64>,
 }
 
 impl InMemoryPageStore {
@@ -51,6 +57,7 @@ impl InMemoryPageStore {
             pages: HashMap::new(),
             next_page_id: 1,
             page_size,
+            dirty_pages: HashSet::new(),
         }
     }
 
@@ -129,6 +136,10 @@ impl PageStore for InMemoryPageStore {
         // Add CRC to the page
         let bytes_with_crc = Self::add_crc(bytes.to_vec());
         self.pages.insert(page_id, bytes_with_crc);
+
+        // Mark the page as dirty
+        self.mark_page_dirty(page_id);
+
         Ok(())
     }
 
@@ -144,6 +155,8 @@ impl PageStore for InMemoryPageStore {
     }
 
     fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+        // Clear dirty pages on flush
+        self.clear_dirty_pages();
         Ok(())
     }
 
@@ -195,10 +208,23 @@ impl PageStore for InMemoryPageStore {
 
     fn free_page(&mut self, page_id: u64) -> Result<(), Box<dyn Error>> {
         self.pages.remove(&page_id);
+        self.dirty_pages.remove(&page_id);
         Ok(())
     }
 
     fn get_page_count(&self) -> usize {
         self.pages.len()
+    }
+
+    fn mark_page_dirty(&mut self, page_id: u64) {
+        self.dirty_pages.insert(page_id);
+    }
+
+    fn dirty_pages(&self) -> &HashSet<u64> {
+        &self.dirty_pages
+    }
+
+    fn clear_dirty_pages(&mut self) {
+        self.dirty_pages.clear();
     }
 }
