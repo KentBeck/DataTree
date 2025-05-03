@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Cannot deserialize BranchPage: byte array length")]
+    #[should_panic(expected = "Cannot deserialize BranchPage: byte array length 10 is less than required header size")]
     fn test_branch_page_deserialize_with_short_bytes() {
         // Create a byte array that is too short for the header
         let short_bytes = vec![0u8; 10]; // HEADER_SIZE is much larger than 10

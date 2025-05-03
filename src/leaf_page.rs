@@ -25,7 +25,6 @@ pub const METADATA_ENTRY_SIZE: usize = KEY_SIZE + VALUE_LENGTH_SIZE;
 
 #[derive(Debug)]
 pub struct LeafPage {
-    pub page_type: PageType,
     pub page_size: usize,
     pub metadata: Vec<LeafPageEntry>,
     pub data: Vec<u8>,
@@ -35,12 +34,15 @@ pub struct LeafPage {
 
 impl LeafPage {
     pub fn new(bytes: &[u8]) -> Self {
+        if bytes.is_empty() {
+            panic!("Cannot create LeafPage from empty bytes");
+        }
         Self::deserialize(bytes)
     }
 
+    #[deprecated(since = "0.2.0", note = "Use `new` method instead")]
     pub fn new_empty(page_size: usize) -> Self {
         LeafPage {
-            page_type: PageType::LeafPage,
             page_size,
             metadata: Vec::new(),
             data: Vec::new(),
@@ -53,7 +55,7 @@ impl LeafPage {
         let mut bytes = Vec::with_capacity(self.page_size);
 
         // Write page type (1 byte)
-        bytes.push(self.page_type.to_u8());
+        bytes.push(self.page_type().to_u8());
 
         // Write metadata count (8 bytes)
         bytes.extend_from_slice(&(self.metadata.len() as u64).to_le_bytes());
@@ -88,7 +90,10 @@ impl LeafPage {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Self {
-        // Check if the bytes array is long enough for the header
+        // Check if the bytes array is empty or too short for the header
+        if bytes.is_empty() {
+            panic!("Cannot deserialize LeafPage from empty bytes");
+        }
         if bytes.len() < HEADER_SIZE {
             // Panic if the bytes array is too short
             panic!("Cannot deserialize LeafPage: byte array length {} is less than required header size {}", bytes.len(), HEADER_SIZE);
@@ -98,6 +103,18 @@ impl LeafPage {
 
         // Read page type (1 byte)
         let page_type = PageType::from_u8(bytes[offset]).unwrap_or(PageType::LeafPage);
+
+        // If this is a FREE page, return an empty LeafPage
+        if page_type == PageType::FREE {
+            return LeafPage {
+                page_size: bytes.len(),
+                metadata: Vec::new(),
+                data: Vec::new(),
+                prev_page_id: 0,
+                next_page_id: 0,
+            };
+        }
+
         offset += 1;
 
         // Read metadata count (8 bytes)
@@ -152,7 +169,6 @@ impl LeafPage {
         };
 
         LeafPage {
-            page_type,
             page_size: bytes.len(),
             metadata,
             data,
@@ -162,7 +178,7 @@ impl LeafPage {
     }
 
     pub fn page_type(&self) -> PageType {
-        self.page_type
+        PageType::LeafPage // Always return LeafPage type
     }
 
     pub fn metadata(&self) -> &[LeafPageEntry] {
@@ -305,7 +321,6 @@ impl LeafPage {
 
         // Create new page with same size
         let mut new_page = LeafPage::new_empty(self.page_size);
-        new_page.page_type = PageType::LeafPage;
 
         // First pass: collect all data
         let mut all_data = Vec::new();
@@ -352,8 +367,26 @@ impl LeafPage {
     }
 
     // Kept for backward compatibility
+    #[deprecated(since = "0.2.0", note = "Use `new` method instead")]
     pub fn new_with_size(page_size: usize) -> Self {
-        Self::new_empty(page_size)
+        LeafPage {
+            page_size,
+            metadata: Vec::new(),
+            data: Vec::new(),
+            prev_page_id: 0,
+            next_page_id: 0,
+        }
+    }
+
+    /// Creates a new FREE page with the given size
+    pub fn new_free_page(page_size: usize) -> Self {
+        LeafPage {
+            page_size,
+            metadata: Vec::new(),
+            data: Vec::new(),
+            prev_page_id: 0,
+            next_page_id: 0,
+        }
     }
 
     fn compact_data(&mut self) {

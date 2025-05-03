@@ -19,6 +19,7 @@ impl Error for KeyNotFoundError {}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PageType {
+    FREE = 0,
     LeafPage = 1,
     BranchPage = 2,
     RLELeafPage = 3,
@@ -28,6 +29,7 @@ pub enum PageType {
 impl PageType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
+            0 => Some(PageType::FREE),
             1 => Some(PageType::LeafPage),
             2 => Some(PageType::BranchPage),
             3 => Some(PageType::RLELeafPage),
