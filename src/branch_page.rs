@@ -32,9 +32,6 @@ pub struct BranchPage {
 
 impl BranchPage {
     pub fn new(bytes: &[u8]) -> Self {
-        if bytes.is_empty() {
-            return Self::new_empty(bytes.len());
-        }
         Self::deserialize(bytes)
     }
 
@@ -120,8 +117,8 @@ impl BranchPage {
     pub fn deserialize(bytes: &[u8]) -> Self {
         // Check if the bytes array is long enough for the header
         if bytes.len() < Self::HEADER_SIZE {
-            // Return an empty BranchPage if the bytes array is too short
-            return BranchPage::new_empty(bytes.len());
+            // Panic if the bytes array is too short
+            panic!("Cannot deserialize BranchPage: byte array length {} is less than required header size {}", bytes.len(), Self::HEADER_SIZE);
         }
 
         let mut offset = 0;
@@ -218,6 +215,16 @@ mod tests {
         assert_eq!(deserialized.find_page_id(10), Some(1));
         assert_eq!(deserialized.find_page_id(20), Some(2));
         assert_eq!(deserialized.find_page_id(30), Some(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot deserialize BranchPage: byte array length")]
+    fn test_branch_page_deserialize_with_short_bytes() {
+        // Create a byte array that is too short for the header
+        let short_bytes = vec![0u8; 10]; // HEADER_SIZE is much larger than 10
+
+        // This should panic
+        let _ = BranchPage::deserialize(&short_bytes);
     }
 
     #[test]

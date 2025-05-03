@@ -38,9 +38,6 @@ pub struct RLELeafPage {
 
 impl RLELeafPage {
     pub fn new(bytes: &[u8]) -> Self {
-        if bytes.is_empty() {
-            return Self::new_empty(bytes.len());
-        }
         Self::deserialize(bytes)
     }
 
@@ -102,8 +99,8 @@ impl RLELeafPage {
     pub fn deserialize(bytes: &[u8]) -> Self {
         // Check if the bytes array is long enough for the header
         if bytes.len() < HEADER_SIZE {
-            // Return an empty RleLeafPage if the bytes array is too short
-            return RLELeafPage::new_empty(bytes.len());
+            // Panic if the bytes array is too short
+            panic!("Cannot deserialize RLELeafPage: byte array length {} is less than required header size {}", bytes.len(), HEADER_SIZE);
         }
 
         let mut offset = 0;

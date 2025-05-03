@@ -286,3 +286,13 @@ fn test_leaf_page_with_max_data() {
     let retrieved_value = deserialized.get(key).unwrap();
     assert_eq!(retrieved_value, value);
 }
+
+#[test]
+#[should_panic(expected = "Cannot deserialize LeafPage: byte array length")]
+fn test_leaf_page_deserialize_with_short_bytes() {
+    // Create a byte array that is too short for the header
+    let short_bytes = vec![0u8; 10]; // HEADER_SIZE is much larger than 10
+
+    // This should panic
+    let _ = LeafPage::deserialize(&short_bytes);
+}

@@ -270,3 +270,13 @@ fn test_rle_leaf_page_split() {
         }
     }
 }
+
+#[test]
+#[should_panic(expected = "Cannot deserialize RLELeafPage: byte array length")]
+fn test_rle_leaf_page_deserialize_with_short_bytes() {
+    // Create a byte array that is too short for the header
+    let short_bytes = vec![0u8; 10]; // HEADER_SIZE is much larger than 10
+
+    // This should panic
+    let _ = RLELeafPage::deserialize(&short_bytes);
+}
