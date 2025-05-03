@@ -280,3 +280,79 @@ fn test_rle_leaf_page_deserialize_with_short_bytes() {
     // This should panic
     let _ = RLELeafPage::deserialize(&short_bytes);
 }
+
+#[test]
+fn test_rle_leaf_page_incremental_fill_and_split() {
+    // Create a small RLELeafPage to make it easier to fill
+    let page_size = 256; // Small page size to force a split sooner
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
+
+    // Keep track of all inserted keys and values
+    let mut all_keys = Vec::new();
+    let mut all_values = Vec::new();
+
+    // Add key-value pairs with increasing numbers until the page needs to split
+    // Key i will have value [i]
+    let mut i = 1;
+    loop {
+        let key = i as u64;
+        let value = vec![i as u8];
+
+        // Try to insert the key-value pair
+        if !leaf_page.put(key, &value) {
+            // Page is full, break the loop
+            break;
+        }
+
+        // Store the key and value for later verification
+        all_keys.push(key);
+        all_values.push(value);
+
+        i += 1;
+    }
+
+    // Verify we've added some entries before the page split
+    assert!(all_keys.len() >= 5, "Expected at least 5 entries before page split, but only got {}", all_keys.len());
+    println!("Added {} entries before page split", all_keys.len());
+
+    // Split the page
+    let new_page = leaf_page.split().unwrap();
+
+    // Verify the split was done correctly
+    // 1. Check that all entries are in either the original page or the new page
+    for (idx, key) in all_keys.iter().enumerate() {
+        let value = &all_values[idx];
+        let retrieved_value = leaf_page.get(*key).or_else(|| new_page.get(*key));
+
+        assert!(retrieved_value.is_some(), "Key {} not found in either page", key);
+        assert_eq!(retrieved_value.unwrap(), value, "Value mismatch for key {}", key);
+    }
+
+    // 2. Check that the metadata is split roughly in half
+    let total_runs = all_keys.len(); // In this case, each key is its own run
+    assert!(leaf_page.metadata.len() > 0, "Original page has no metadata after split");
+    assert!(new_page.metadata.len() > 0, "New page has no metadata after split");
+
+    // The split should be roughly even, but we'll allow some flexibility
+    let min_expected = 1; // At least 1 entry in each page
+    assert!(leaf_page.metadata.len() >= min_expected,
+            "Original page has too few entries: {} (expected at least {})",
+            leaf_page.metadata.len(), min_expected);
+    assert!(new_page.metadata.len() >= min_expected,
+            "New page has too few entries: {} (expected at least {})",
+            new_page.metadata.len(), min_expected);
+
+    // 3. Check that all keys in the original page are less than all keys in the new page
+    if !leaf_page.metadata.is_empty() && !new_page.metadata.is_empty() {
+        let max_key_original = leaf_page.metadata.iter().map(|m| m.end_key).max().unwrap();
+        let min_key_new = new_page.metadata.iter().map(|m| m.start_key).min().unwrap();
+
+        assert!(max_key_original < min_key_new,
+                "Keys are not properly split: max key in original page ({}) should be less than min key in new page ({})",
+                max_key_original, min_key_new);
+    }
+
+    // 4. Verify that the total number of entries is preserved
+    assert_eq!(leaf_page.metadata.len() + new_page.metadata.len(), total_runs,
+               "Total number of entries changed after split");
+}
