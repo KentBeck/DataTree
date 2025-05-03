@@ -1,4 +1,4 @@
-use data_tree::data_tree::{DataTree2, ResultFormatter, IdentityFormatter};
+use data_tree::data_tree2::{DataTree2, ResultFormatter, IdentityFormatter};
 use data_tree::page_store::{PageStore, InMemoryPageStore};
 
 #[test]
