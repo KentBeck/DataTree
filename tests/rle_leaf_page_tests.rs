@@ -282,6 +282,70 @@ fn test_rle_leaf_page_deserialize_with_short_bytes() {
 }
 
 #[test]
+fn test_rle_leaf_page_even_split() {
+    // Create a small RLELeafPage to make it easier to fill
+    let page_size = 256; // Small page size to force a split sooner
+    let mut leaf_page = RLELeafPage::new_empty(page_size);
+
+    // Add a series of key-value pairs with alternating values to create multiple runs
+    // This ensures we have multiple metadata entries for the split to work
+    let value1 = vec![1, 2, 3, 4];
+    let value2 = vec![5, 6, 7, 8];
+
+    // Add entries until the page is full
+    let mut keys = Vec::new();
+    for i in 1..100 { // Try up to 100 keys, but we'll break when the page is full
+        let key = i as u64;
+        let value = if i % 2 == 0 { &value1 } else { &value2 };
+
+        if !leaf_page.put(key, value) {
+            break;
+        }
+        keys.push(key);
+    }
+
+    // Make sure we have enough entries to make the test meaningful
+    assert!(keys.len() >= 4, "Expected at least 4 entries before page split, but only got {}", keys.len());
+    println!("Added {} entries before page split", keys.len());
+
+    // Split the page
+    let new_page = leaf_page.split().unwrap();
+
+    // Count how many keys are in each page after the split
+    let mut old_page_count = 0;
+    let mut new_page_count = 0;
+
+    for key in &keys {
+        if leaf_page.get(*key).is_some() {
+            old_page_count += 1;
+        } else if new_page.get(*key).is_some() {
+            new_page_count += 1;
+        } else {
+            panic!("Key {} not found in either page after split", key);
+        }
+    }
+
+    // Verify that all keys are accounted for
+    assert_eq!(old_page_count + new_page_count, keys.len(),
+               "Total number of keys changed after split");
+
+    // Verify that the split is approximately even (within 1 entry)
+    let expected_count = keys.len() / 2;
+    let tolerance = 1; // Allow a difference of 1 entry
+
+    assert!((old_page_count as i32 - expected_count as i32).abs() <= tolerance,
+            "Old page has {} entries, expected approximately {}",
+            old_page_count, expected_count);
+
+    assert!((new_page_count as i32 - expected_count as i32).abs() <= tolerance,
+            "New page has {} entries, expected approximately {}",
+            new_page_count, expected_count);
+
+    println!("Split result: {} entries in old page, {} entries in new page (total: {})",
+             old_page_count, new_page_count, keys.len());
+}
+
+#[test]
 fn test_rle_leaf_page_incremental_fill_and_split() {
     // Create a small RLELeafPage to make it easier to fill
     let page_size = 256; // Small page size to force a split sooner
